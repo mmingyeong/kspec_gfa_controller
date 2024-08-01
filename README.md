@@ -1,4 +1,5 @@
 # kspec_gfa_controller
+=======
 
 ![Versions](https://img.shields.io/badge/python-3.9+-blue)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
@@ -29,5 +30,4 @@ python main.py
 ## Software Architecture
 
 Here is the Software Architecture diagram explaining the hierarchy of KSPEC-GFA.
-
 ![img](./docs/sphinx/source/_static/kspec-gfa_software_architecture.png)
