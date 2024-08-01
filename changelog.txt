@@ -1,0 +1,33 @@
+Version 0.1.0
+    - Date 2023-12-11
+    - Make repository
+    - Initialization for the repository and Controller
+
+Version 0.2.0
+    - Date 2024-01-19
+    - gfa_controller function implementation
+    - etc. class function implementation
+    - Add the commands for status and grab
+    - poetry update for dependency management
+    - Sphinx update for documentaiton
+    - README update
+
+Version 0.3.0
+    - Date 2024-02-14
+    - Add descriptive comments to classes and functions
+    - Add the function and command ping()
+    - update gfa_logger: logging system
+    - update gfa_exceptions: exception handling system
+    - Apply logging system to gfa_controller and gfa_config
+    - Apply exception handling to gfa_controller and gfa_config
+    - Sphinx update for KSPEC logo
+
+Version 0.4.0
+    - Date 24-08-01
+    - This version is combined with kspec-gfa which is the draft version.
+    - cams.yml: Updated camera information.
+    - logger, exception: Re-added the logger and exception handling.
+    - gfa_controller.py: Modified internal functions within the gfa_controller.
+    - gfa_action.py: Added new action functions(Especially, grabone(), graball()).
+    - Asynchronous Execution: Updated code for asynchronous execution.
+    - main.py: Added for testing purposes.
