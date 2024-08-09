@@ -6,12 +6,8 @@
 # @Filename: gfa_img.py
 
 import os
-from datetime import datetime
-
-import matplotlib.pyplot as plt
-import numpy as np
-import pypylon.pylon as py
 from astropy.io import fits
+from datetime import datetime
 
 
 def save_fits(
@@ -48,13 +44,17 @@ def save_fits(
     object_name : str, optional
         The name of the observed object (default is "Unknown").
     date_obs : str, optional
-        The observation date in "YYYY-MM-DD" format (default is None, which means "UNKNOWN").
+        The observation date in "YYYY-MM-DD" format
+        (default is None, which means "UNKNOWN").
     time_obs : str, optional
-        The observation time in "HH:MM:SS" format (default is None, which means "UNKNOWN").
+        The observation time in "HH:MM:SS" format
+        (default is None, which means "UNKNOWN").
     ra : str, optional
-        The right ascension of the observed object (default is None, which means "UNKNOWN").
+        The right ascension of the observed object
+        (default is None, which means "UNKNOWN").
     dec : str, optional
-        The declination of the observed object (default is None, which means "UNKNOWN").
+        The declination of the observed object
+        (default is None, which means "UNKNOWN").
     output_directory : str, optional
         The directory where the FITS file will be saved (default is "save").
 

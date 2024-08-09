@@ -1,8 +1,3 @@
-.. kspec-gfa documentation master file, created by
-   sphinx-quickstart on Mon Jan  8 17:25:59 2024.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
 Welcome to kspec-gfa's documentation!
 =====================================
 
@@ -11,12 +6,14 @@ Welcome to kspec-gfa's documentation!
 
   getting-started
   modules
+  changelog
+
 
 .. toctree::
   :caption: Development
   :maxdepth: 2
 
-  Bitbucket Repository <https://mmingyeong@bitbucket.org/mmmingyeong/kspec-gfa.git>
+  GitHub Repository <https://github.com/mmingyeong/kspec_gfa_controller.git>
 
 
 Indices and tables

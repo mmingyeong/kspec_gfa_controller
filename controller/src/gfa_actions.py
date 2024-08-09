@@ -5,9 +5,8 @@
 # @Date: 2024-05-16
 # @Filename: gfa_actions.py
 
-import asyncio
 import os
-import time
+import asyncio
 
 from controller.src.gfa_controller import gfa_controller
 from controller.src.gfa_logger import gfa_logger
@@ -76,7 +75,8 @@ def cam_params(CamNum=0):
     Parameters
     ----------
     CamNum : int, optional
-        The camera number to retrieve parameters from. If 0, retrieves from all cameras (default is 0).
+        The camera number to retrieve parameters from.
+        If 0, retrieves from all cameras (default is 0).
     """
     if CamNum == 0:
         for n in range(6):
@@ -93,7 +93,8 @@ async def grab(CamNum=0, ExpTime=1, Bininng=4):
     Parameters
     ----------
     CamNum : int or list of int
-        The camera number(s) to grab images from. If 0, grabs from all cameras.
+        The camera number(s) to grab images from.
+        If 0, grabs from all cameras.
     ExpTime : float, optional
         Exposure time in seconds (default is 1).
     Bininng : int, optional

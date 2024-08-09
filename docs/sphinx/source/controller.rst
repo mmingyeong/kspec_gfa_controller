@@ -4,50 +4,43 @@ controller package
 Submodules
 ----------
 
-controller.exceptions module
+controller.gfa_actions module
+-------------------------------
+
+.. automodule:: controller.src.gfa_actions
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+controller.gfa_controller module
+----------------------------------
+
+.. automodule:: controller.src.gfa_controller
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+controller.gfa_img module
 ----------------------------
 
-.. automodule:: controller.exceptions
+.. automodule:: controller.src.gfa_img
    :members:
    :undoc-members:
    :show-inheritance:
 
-controller.gfa\_config module
------------------------------
-
-.. automodule:: controller.gfa_config
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-controller.gfa\_controller module
----------------------------------
-
-.. automodule:: controller.gfa_controller
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-controller.gfa\_guiding module
+controller.gfa_logger module
 ------------------------------
 
-.. automodule:: controller.gfa_guiding
+.. automodule:: controller.src.gfa_logger
    :members:
    :undoc-members:
    :show-inheritance:
 
-controller.gfa\_log module
---------------------------
-
-.. automodule:: controller.gfa_log
-   :members:
-   :undoc-members:
-   :show-inheritance:
 
 Module contents
----------------
+-----------------
 
-.. automodule:: controller
+.. automodule:: controller.src
    :members:
    :undoc-members:
    :show-inheritance:

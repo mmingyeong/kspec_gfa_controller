@@ -1,8 +1,8 @@
 # kspec_gfa_controller
-=======
+==================================================================
 
 ![Versions](https://img.shields.io/badge/python-3.9+-blue)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+![Ruff](https://github.com/username/projectname/actions/workflows/ruff.yml/badge.svg)
 [![Documentation Status](https://readthedocs.org/projects/kspec-gfa/badge/?version=latest)](https://kspec-gfa.readthedocs.io/en/latest/?badge=latest)
 
 # The KSPEC GFA Camera Controller
@@ -30,4 +30,5 @@ python main.py
 ## Software Architecture
 
 Here is the Software Architecture diagram explaining the hierarchy of KSPEC-GFA.
+
 ![img](./docs/sphinx/source/_static/kspec-gfa_software_architecture.png)

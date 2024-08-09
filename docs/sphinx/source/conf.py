@@ -9,7 +9,7 @@ import sys
 # sys.path.insert(0, os.path.abspath('../../..'))
 # # docs/sphinx/source/conf.py 인 경우
 # 만약 경로 못찾는다 나오면 아래와 같이 풀경로 넣어야함
-sys.path.insert(0, os.path.abspath("/home/kspec/mingyeong/kspec-gfa/python/kspec-gfa"))
+sys.path.insert(0, os.path.abspath("/home/kspec/mingyeong/kspec_gfa_controller/"))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -21,13 +21,19 @@ author = "Mingyeong Yang"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
+# Add Napoleon extension
 extensions = [
-    "sphinx.ext.autodoc",
+    'sphinx.ext.autodoc',
+    'sphinx.ext.napoleon',  # Add this line
+    # ... other extensions
 ]
 
 templates_path = ["_templates"]
 exclude_patterns = []
 
+# Napoleon settings (optional)
+napoleon_google_docstring = False
+napoleon_numpy_docstring = True
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output

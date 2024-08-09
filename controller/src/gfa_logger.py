@@ -18,7 +18,8 @@ class gfa_logger:
     Parameters
     ----------
     file : str
-        The name of the file that will be used to create the logger. The log file will be named based on this parameter.
+        The name of the file that will be used to create the logger.
+        The log file will be named based on this parameter.
     """
 
     def __init__(self, file):

@@ -13,7 +13,7 @@
     <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="commander package" href="commander.html" />
+    <link rel="next" title="controller package" href="controller.html" />
     <link rel="prev" title="Getting started" href="getting-started.html" />
    
   <link rel="stylesheet" href="_static/custom.css" type="text/css" />
@@ -36,61 +36,43 @@
 <h1>python<a class="headerlink" href="#python" title="Link to this heading">¶</a></h1>
 <div class="toctree-wrapper compound">
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="commander.html">commander package</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="commander.html#submodules">Submodules</a></li>
-<li class="toctree-l2"><a class="reference internal" href="commander.html#module-commander.grab">commander.grab module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="commander.html#module-commander.graball">commander.graball module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="commander.html#module-commander.offset">commander.offset module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="commander.html#module-commander.status">commander.status module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="commander.html#module-commander">Module contents</a></li>
-</ul>
-</li>
 <li class="toctree-l1"><a class="reference internal" href="controller.html">controller package</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="controller.html#submodules">Submodules</a></li>
-<li class="toctree-l2"><a class="reference internal" href="controller.html#module-controller.exceptions">controller.exceptions module</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.exceptions.GFAError"><code class="docutils literal notranslate"><span class="pre">GFAError</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.exceptions.GFAInitConnectCameraError"><code class="docutils literal notranslate"><span class="pre">GFAInitConnectCameraError</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.exceptions.GFAInitError"><code class="docutils literal notranslate"><span class="pre">GFAInitError</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.exceptions.GFAInitGrabError"><code class="docutils literal notranslate"><span class="pre">GFAInitGrabError</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.exceptions.GFAInitGrabImageError"><code class="docutils literal notranslate"><span class="pre">GFAInitGrabImageError</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.exceptions.GFAInitOpenCameraError"><code class="docutils literal notranslate"><span class="pre">GFAInitOpenCameraError</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.exceptions.GFAWarning"><code class="docutils literal notranslate"><span class="pre">GFAWarning</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="controller.html#module-controller.src.gfa_actions">controller.gfa_actions module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.src.gfa_actions.cam_params"><code class="docutils literal notranslate"><span class="pre">cam_params()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.src.gfa_actions.grab"><code class="docutils literal notranslate"><span class="pre">grab()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.src.gfa_actions.offset"><code class="docutils literal notranslate"><span class="pre">offset()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.src.gfa_actions.ping"><code class="docutils literal notranslate"><span class="pre">ping()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.src.gfa_actions.status"><code class="docutils literal notranslate"><span class="pre">status()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="controller.html#module-controller.gfa_config">controller.gfa_config module</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.gfa_config.gfa_config"><code class="docutils literal notranslate"><span class="pre">gfa_config</span></code></a><ul>
-<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.gfa_config.gfa_config.from_config"><code class="docutils literal notranslate"><span class="pre">gfa_config.from_config()</span></code></a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="controller.html#module-controller.gfa_controller">controller.gfa_controller module</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.gfa_controller.gfa_controller"><code class="docutils literal notranslate"><span class="pre">gfa_controller</span></code></a><ul>
-<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.gfa_controller.gfa_controller.close"><code class="docutils literal notranslate"><span class="pre">gfa_controller.close()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.gfa_controller.gfa_controller.grab"><code class="docutils literal notranslate"><span class="pre">gfa_controller.grab()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.gfa_controller.gfa_controller.open"><code class="docutils literal notranslate"><span class="pre">gfa_controller.open()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.gfa_controller.gfa_controller.ready"><code class="docutils literal notranslate"><span class="pre">gfa_controller.ready()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.gfa_controller.gfa_controller.status"><code class="docutils literal notranslate"><span class="pre">gfa_controller.status()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="controller.html#module-controller.src.gfa_controller">controller.gfa_controller module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.src.gfa_controller.gfa_controller"><code class="docutils literal notranslate"><span class="pre">gfa_controller</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.src.gfa_controller.gfa_controller.cam_params"><code class="docutils literal notranslate"><span class="pre">gfa_controller.cam_params()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.src.gfa_controller.gfa_controller.grab"><code class="docutils literal notranslate"><span class="pre">gfa_controller.grab()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.src.gfa_controller.gfa_controller.grabone"><code class="docutils literal notranslate"><span class="pre">gfa_controller.grabone()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.src.gfa_controller.gfa_controller.ping"><code class="docutils literal notranslate"><span class="pre">gfa_controller.ping()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.src.gfa_controller.gfa_controller.process_camera"><code class="docutils literal notranslate"><span class="pre">gfa_controller.process_camera()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.src.gfa_controller.gfa_controller.status"><code class="docutils literal notranslate"><span class="pre">gfa_controller.status()</span></code></a></li>
 </ul>
 </li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="controller.html#module-controller.gfa_guiding">controller.gfa_guiding module</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.gfa_guiding.gfa_guiding"><code class="docutils literal notranslate"><span class="pre">gfa_guiding</span></code></a><ul>
-<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.gfa_guiding.gfa_guiding.offset"><code class="docutils literal notranslate"><span class="pre">gfa_guiding.offset()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="controller.html#module-controller.src.gfa_img">controller.gfa_img module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.src.gfa_img.save_fits"><code class="docutils literal notranslate"><span class="pre">save_fits()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="controller.html#module-controller.src.gfa_logger">controller.gfa_logger module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.src.gfa_logger.gfa_logger"><code class="docutils literal notranslate"><span class="pre">gfa_logger</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.src.gfa_logger.gfa_logger.debug"><code class="docutils literal notranslate"><span class="pre">gfa_logger.debug()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.src.gfa_logger.gfa_logger.error"><code class="docutils literal notranslate"><span class="pre">gfa_logger.error()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.src.gfa_logger.gfa_logger.info"><code class="docutils literal notranslate"><span class="pre">gfa_logger.info()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.src.gfa_logger.gfa_logger.warning"><code class="docutils literal notranslate"><span class="pre">gfa_logger.warning()</span></code></a></li>
 </ul>
 </li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="controller.html#module-controller.gfa_log">controller.gfa_log module</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="controller.html#controller.gfa_log.gfa_logger"><code class="docutils literal notranslate"><span class="pre">gfa_logger</span></code></a><ul>
-<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.gfa_log.gfa_logger.error"><code class="docutils literal notranslate"><span class="pre">gfa_logger.error()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="controller.html#controller.gfa_log.gfa_logger.info"><code class="docutils literal notranslate"><span class="pre">gfa_logger.info()</span></code></a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="controller.html#module-controller">Module contents</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controller.html#module-controller.src">Module contents</a></li>
 </ul>
 </li>
 </ul>
@@ -105,7 +87,7 @@
       <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
         <div class="sphinxsidebarwrapper">
             <p class="logo"><a href="index.html">
-              <img class="logo" src="_static/kasi.png" alt="Logo"/>
+              <img class="logo" src="_static/KSPEC_FIN_6_white_color.png" alt="Logo"/>
             </a></p>
 <h1 class="logo"><a href="index.html">kspec-gfa</a></h1>
 
@@ -121,14 +103,14 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting started</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">python</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="commander.html">commander package</a></li>
 <li class="toctree-l2"><a class="reference internal" href="controller.html">controller package</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Development</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference external" href="https://mmingyeong&#64;bitbucket.org/mmmingyeong/kspec-gfa.git">Bitbucket Repository</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/mmingyeong/kspec_gfa_controller.git">GitHub Repository</a></li>
 </ul>
 
 <div class="relations">
@@ -136,7 +118,7 @@
 <ul>
   <li><a href="index.html">Documentation overview</a><ul>
       <li>Previous: <a href="getting-started.html" title="previous chapter">Getting started</a></li>
-      <li>Next: <a href="commander.html" title="next chapter">commander package</a></li>
+      <li>Next: <a href="controller.html" title="next chapter">controller package</a></li>
   </ul></li>
 </ul>
 </div>

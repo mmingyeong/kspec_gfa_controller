@@ -104,8 +104,9 @@ class gfa_controller:
         """
         Checks and logs the connection status of all cameras.
 
-        This method iterates over a predefined range of cameras, retrieves each camera's IP address,
-        and checks its connection status by attempting to open and close a connection to the camera.
+        This method iterates over a predefined range of cameras,
+        retrieves each camera's IP address, and checks its connection
+        status by attempting to open and close a connection to the camera.
 
         Notes
         -----
