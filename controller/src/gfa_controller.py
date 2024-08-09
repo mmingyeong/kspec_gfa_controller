@@ -16,12 +16,12 @@ import pypylon.pylon as py
 import yaml
 from pypylon import genicam
 
-from controller.src.gfa_img import save_fits
+from controller.src.gfa_img import gfa_img
 
 __all__ = ["gfa_controller"]
 
 grab_timeout = 5000
-
+img_class = gfa_img()
 
 class gfa_controller:
     """Talk to an KSPEC GFA Camera over TCP/IP."""
@@ -267,8 +267,8 @@ class gfa_controller:
             grab_timeout = 5000  # Define grab timeout
             res = camera.GrabOne(grab_timeout)
             img = res.GetArray()
-            filename = f"{formatted}_grabone_cam{CamNum}"
-            save_fits(img, filename + ".fits", ExpTime)
+            filename = f"{formatted}_grabone_cam{CamNum}.fits"
+            img_class.save_fits(image_array=img, filename=filename, exptime=ExpTime)
 
             fig = plt.figure()
             plt.imshow(img)
@@ -434,7 +434,7 @@ class gfa_controller:
             png_filename = f"save/{formatted}_grab_cam_{serial_number}.png"
 
             # Save FITS file
-            save_fits(img, filename, ExpTime)
+            img_class.save_fits(image_array=img, filename=filename, exptime=ExpTime)
 
             # Save PNG file
             fig = plt.figure()

@@ -3,13 +3,12 @@
 #
 # @Author: Mingyeong Yang (mmingyeong@kasi.re.kr)
 # @Date: 2023-12-07
-# @Filename: gfa_log.ipynb
+# @Filename: gfa_log.py
 
 import logging
 import os
 
 __all__ = ["gfa_logger"]
-
 
 class gfa_logger:
     """

@@ -14,7 +14,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.gfa_actions import cam_params, grab, ping, status
 
-
 async def main():
     camnum = [4, 6]
     # ping()

@@ -13,7 +13,6 @@ from controller.src.gfa_logger import gfa_logger
 
 __all__ = ["offset", "status", "ping", "cam_params", "grab"]
 
-
 def get_config_path():
     """
     Calculate and return the absolute path of the configuration file.
@@ -42,7 +41,6 @@ def get_config_path():
 config_path = get_config_path()
 logger = gfa_logger(__file__)
 controller = gfa_controller(config_path, logger)
-
 
 def status():
     """
