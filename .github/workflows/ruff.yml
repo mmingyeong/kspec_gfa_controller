@@ -23,7 +23,7 @@ jobs:
           pip install ruff
       - name: Run Ruff
         run: |
-          ruff .
+          ruff check .
     
       - name: Generate Badge
         run: |

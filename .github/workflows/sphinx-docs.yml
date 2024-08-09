@@ -5,12 +5,12 @@ on:
     branches:
       - main
     paths:
-      - 'docs/**'
+      - 'docs/sphinx/**'
   pull_request:
     branches:
       - main
     paths:
-      - 'docs/**'
+      - 'docs/sphinx/**'
 
 jobs:
   build:
@@ -32,11 +32,11 @@ jobs:
 
       - name: Build Sphinx documentation
         run: |
-          cd docs
+          cd docs/sphinx
           make html
 
       - name: Upload documentation artifacts
         uses: actions/upload-artifact@v3
         with:
           name: documentation
-          path: docs/build/html
+          path: docs/sphinx/build/html
