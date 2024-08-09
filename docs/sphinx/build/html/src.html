@@ -37,6 +37,219 @@
 <section id="submodules">
 <h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading">¶</a></h2>
 </section>
+<section id="module-gfa_actions">
+<span id="src-gfa-actions-module"></span><h2>src.gfa_actions module<a class="headerlink" href="#module-gfa_actions" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="gfa_actions.cam_params">
+<span class="sig-prename descclassname"><span class="pre">gfa_actions.</span></span><span class="sig-name descname"><span class="pre">cam_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">CamNum</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#gfa_actions.cam_params" title="Link to this definition">¶</a></dt>
+<dd><p>Retrieve and log parameters from the specified camera(s).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>CamNum</strong> (<em>int</em><em>, </em><em>optional</em>) – The camera number to retrieve parameters from.
+If 0, retrieves from all cameras (default is 0).</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="gfa_actions.grab">
+<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">gfa_actions.</span></span><span class="sig-name descname"><span class="pre">grab</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">CamNum</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ExpTime</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Bininng</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#gfa_actions.grab" title="Link to this definition">¶</a></dt>
+<dd><p>Grab an image from the specified camera(s).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>CamNum</strong> (<em>int</em><em> or </em><em>list</em><em> of </em><em>int</em>) – The camera number(s) to grab images from.
+If 0, grabs from all cameras.</p></li>
+<li><p><strong>ExpTime</strong> (<em>float</em><em>, </em><em>optional</em>) – Exposure time in seconds (default is 1).</p></li>
+<li><p><strong>Bininng</strong> (<em>int</em><em>, </em><em>optional</em>) – Binning size (default is 4).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If CamNum is neither an integer nor a list of integers.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="gfa_actions.offset">
+<span class="sig-prename descclassname"><span class="pre">gfa_actions.</span></span><span class="sig-name descname"><span class="pre">offset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">Ra</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Dec</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#gfa_actions.offset" title="Link to this definition">¶</a></dt>
+<dd><p>Placeholder for offset function.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>Ra</strong> (<em>float</em>) – Right ascension coordinate.</p></li>
+<li><p><strong>Dec</strong> (<em>float</em>) – Declination coordinate.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="gfa_actions.ping">
+<span class="sig-prename descclassname"><span class="pre">gfa_actions.</span></span><span class="sig-name descname"><span class="pre">ping</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">CamNum</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#gfa_actions.ping" title="Link to this definition">¶</a></dt>
+<dd><p>Ping the specified camera(s) to check connectivity.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>CamNum</strong> (<em>int</em><em>, </em><em>optional</em>) – The camera number to ping. If 0, pings all cameras (default is 0).</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="gfa_actions.status">
+<span class="sig-prename descclassname"><span class="pre">gfa_actions.</span></span><span class="sig-name descname"><span class="pre">status</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#gfa_actions.status" title="Link to this definition">¶</a></dt>
+<dd><p>Check and log the status of all cameras.</p>
+</dd></dl>
+
+</section>
+<section id="module-gfa_controller">
+<span id="src-gfa-controller-module"></span><h2>src.gfa_controller module<a class="headerlink" href="#module-gfa_controller" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="gfa_controller.gfa_controller">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">gfa_controller.</span></span><span class="sig-name descname"><span class="pre">gfa_controller</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">logger</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#gfa_controller.gfa_controller" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Talk to an KSPEC GFA Camera over TCP/IP.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="gfa_controller.gfa_controller.cam_params">
+<span class="sig-name descname"><span class="pre">cam_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">CamNum</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#gfa_controller.gfa_controller.cam_params" title="Link to this definition">¶</a></dt>
+<dd><p>Retrieves and logs the parameters of the specified camera.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>CamNum</strong> (<em>int</em>) – The number identifier of the camera whose parameters are to be retrieved.</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>KeyError</strong> – If the camera number is not found in the <cite>cameras_info</cite> dictionary.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The method assumes the camera information includes IP address and serial number.</p></li>
+<li><p>It uses the <cite>py.DeviceInfo</cite> and <cite>py.InstantCamera</cite> classes to interact with the camera.</p></li>
+<li><p>It logs detailed camera parameters and handles exceptions when accessing attributes.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="gfa_controller.gfa_controller.grab">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">grab</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">CamNum</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ExpTime</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Bininng</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#gfa_controller.gfa_controller.grab" title="Link to this definition">¶</a></dt>
+<dd><p>Grabs images from specified cameras either individually or all cameras.</p>
+<p>Depending on the value of <cite>CamNum</cite>, the method will grab images from:
+- All cameras (if <cite>CamNum</cite> is 0)
+- A list of specified cameras (if <cite>CamNum</cite> is a list of integers)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>CamNum</strong> (<em>int</em><em> or </em><em>list</em><em> of </em><em>int</em>) – The number identifier of the camera(s) from which to grab images. If <cite>0</cite>, grabs from all cameras. If a list, grabs from the specified cameras.</p></li>
+<li><p><strong>ExpTime</strong> (<em>float</em>) – The exposure time in seconds for the image capture.</p></li>
+<li><p><strong>Bininng</strong> (<em>int</em>) – The binning size for both horizontal and vertical directions.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>KeyError</strong> – If any specified camera number is not found in the <cite>cameras_info</cite> dictionary.</p></li>
+<li><p><strong>ValueError</strong> – If <cite>CamNum</cite> is neither <cite>0</cite> nor a list of integers.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>Uses <cite>py.DeviceInfo</cite> to create camera instances.</p></li>
+<li><p>Handles asynchronous image grabbing for multiple cameras using <cite>asyncio</cite>.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="gfa_controller.gfa_controller.grabone">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">grabone</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">CamNum</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ExpTime</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Bininng</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#gfa_controller.gfa_controller.grabone" title="Link to this definition">¶</a></dt>
+<dd><p>Grabs an image from the specified camera, sets exposure time and binning parameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>CamNum</strong> (<em>int</em>) – The number identifier of the camera from which to grab the image.</p></li>
+<li><p><strong>ExpTime</strong> (<em>float</em>) – The exposure time in seconds.</p></li>
+<li><p><strong>Bininng</strong> (<em>int</em>) – The binning size for both horizontal and vertical directions.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>KeyError</strong> – If the camera number is not found in the <cite>cameras_info</cite> dictionary.</p></li>
+<li><p><strong>genicam.TimeoutException</strong> – If there is a timeout while grabbing the image.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The method assumes the <cite>py.DeviceInfo</cite> and <cite>py.InstantCamera</cite> classes are used for camera interaction.</p></li>
+<li><p>The image is saved in both FITS and PNG formats.</p></li>
+<li><p>Binning parameters are set for both horizontal and vertical directions.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="gfa_controller.gfa_controller.ping">
+<span class="sig-name descname"><span class="pre">ping</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">CamNum</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#gfa_controller.gfa_controller.ping" title="Link to this definition">¶</a></dt>
+<dd><p>Pings the camera specified by CamNum to check connectivity.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>CamNum</strong> (<em>int</em><em>, </em><em>optional</em>) – The number identifier of the camera to ping. Defaults to 0.</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>KeyError</strong> – If the camera number is not found in the <cite>cameras_info</cite> dictionary.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="gfa_controller.gfa_controller.process_camera">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">process_camera</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ExpTime</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Bininng</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#gfa_controller.gfa_controller.process_camera" title="Link to this definition">¶</a></dt>
+<dd><p>Processes a single camera: opens it, sets exposure time and binning parameters, grabs an image, and saves it.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>device</strong> (<em>py.DeviceInfo</em>) – The camera device information used to create and control the camera instance.</p></li>
+<li><p><strong>ExpTime</strong> (<em>float</em>) – The exposure time in seconds for capturing the image.</p></li>
+<li><p><strong>Bininng</strong> (<em>int</em>) – The binning size for both horizontal and vertical directions.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>img</strong> – The captured image as a NumPy array. Returns <cite>None</cite> if an error occurs.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>numpy.ndarray or None</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>genicam.TimeoutException</strong> – If there is a timeout while grabbing the image.</p></li>
+<li><p><strong>Exception</strong> – For any other unexpected errors during image capture.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>Uses <cite>py.InstantCamera</cite> for camera operations.</p></li>
+<li><p>Executes camera operations asynchronously using <cite>asyncio</cite> and <cite>run_in_executor</cite>.</p></li>
+<li><p>Saves the captured image in FITS and PNG formats.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="gfa_controller.gfa_controller.status">
+<span class="sig-name descname"><span class="pre">status</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#gfa_controller.gfa_controller.status" title="Link to this definition">¶</a></dt>
+<dd><p>Checks and logs the connection status of all cameras.</p>
+<p>This method iterates over a predefined range of cameras,
+retrieves each camera’s IP address, and checks its connection
+status by attempting to open and close a connection to the camera.</p>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The method assumes there are up to 6 cameras, indexed from 1 to 6.</p></li>
+<li><p>It uses the <cite>py.DeviceInfo</cite> and <cite>py.InstantCamera</cite> classes to interact with the camera.</p></li>
+<li><p>Cameras are opened and closed to verify their connectivity status.</p></li>
+</ul>
+</dd></dl>
+
+</dd></dl>
+
+</section>
 <section id="module-gfa_img">
 <span id="src-gfa-img-module"></span><h2>src.gfa_img module<a class="headerlink" href="#module-gfa_img" title="Link to this heading">¶</a></h2>
 <dl class="py class">
@@ -165,6 +378,26 @@ The log file will be named based on this parameter.</p>
 <li class="toctree-l1 current"><a class="reference internal" href="modules.html">src</a><ul class="current">
 <li class="toctree-l2 current"><a class="current reference internal" href="#">src package</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#submodules">Submodules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#module-gfa_actions">src.gfa_actions module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#gfa_actions.cam_params"><code class="docutils literal notranslate"><span class="pre">cam_params()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#gfa_actions.grab"><code class="docutils literal notranslate"><span class="pre">grab()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#gfa_actions.offset"><code class="docutils literal notranslate"><span class="pre">offset()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#gfa_actions.ping"><code class="docutils literal notranslate"><span class="pre">ping()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#gfa_actions.status"><code class="docutils literal notranslate"><span class="pre">status()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-gfa_controller">src.gfa_controller module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#gfa_controller.gfa_controller"><code class="docutils literal notranslate"><span class="pre">gfa_controller</span></code></a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#gfa_controller.gfa_controller.cam_params"><code class="docutils literal notranslate"><span class="pre">gfa_controller.cam_params()</span></code></a></li>
+<li class="toctree-l5"><a class="reference internal" href="#gfa_controller.gfa_controller.grab"><code class="docutils literal notranslate"><span class="pre">gfa_controller.grab()</span></code></a></li>
+<li class="toctree-l5"><a class="reference internal" href="#gfa_controller.gfa_controller.grabone"><code class="docutils literal notranslate"><span class="pre">gfa_controller.grabone()</span></code></a></li>
+<li class="toctree-l5"><a class="reference internal" href="#gfa_controller.gfa_controller.ping"><code class="docutils literal notranslate"><span class="pre">gfa_controller.ping()</span></code></a></li>
+<li class="toctree-l5"><a class="reference internal" href="#gfa_controller.gfa_controller.process_camera"><code class="docutils literal notranslate"><span class="pre">gfa_controller.process_camera()</span></code></a></li>
+<li class="toctree-l5"><a class="reference internal" href="#gfa_controller.gfa_controller.status"><code class="docutils literal notranslate"><span class="pre">gfa_controller.status()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 <li class="toctree-l3"><a class="reference internal" href="#module-gfa_img">src.gfa_img module</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#gfa_img.gfa_img"><code class="docutils literal notranslate"><span class="pre">gfa_img</span></code></a><ul>
 <li class="toctree-l5"><a class="reference internal" href="#gfa_img.gfa_img.save_fits"><code class="docutils literal notranslate"><span class="pre">gfa_img.save_fits()</span></code></a></li>
