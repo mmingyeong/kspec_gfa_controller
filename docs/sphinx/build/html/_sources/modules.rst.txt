@@ -1,7 +1,7 @@
-python
-======
+src
+===
 
 .. toctree::
    :maxdepth: 4
 
-   controller
+   src
