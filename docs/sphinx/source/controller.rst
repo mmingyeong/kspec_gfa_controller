@@ -36,7 +36,6 @@ controller.gfa_logger module
    :undoc-members:
    :show-inheritance:
 
-
 Module contents
 -----------------
 
