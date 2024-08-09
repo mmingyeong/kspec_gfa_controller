@@ -31,3 +31,21 @@ Version 0.4.0
     - gfa_action.py: Added new action functions(Especially, grabone(), graball()).
     - Asynchronous Execution: Updated code for asynchronous execution.
     - main.py: Added for testing purposes.
+
+Version 0.5.0
+    - Date 24-08-09
+    - **Configuration Updates**:
+    - Converted `Cams.yml` to `Cams.json`.
+    - Updated `controller/src/etc/cams.yml`.
+    - Initial configuration update for Multicam setup.
+    - Added connection for Camera 6.
+    - **Code Enhancements**:
+    - Updated docstrings and logging code across the project.
+    - **New Feature**:
+    - `Gfa_img.py`: Added function to save images as FITS files.
+    - **Function Updates**:
+    - `Gfa_action.py`: Updated the `grab()` function.
+    - `Gfa_controller.py`: Updated the `grabone()`, `grab()`, and `process_camera()` functions.
+    - `Process_camera()`: Removed image-saving code to reduce execution time by 3 seconds.
+    - **Code Quality**:
+    - Applied code formatting and linting using `black`, `flake8`, `isort`, and `ruff`.

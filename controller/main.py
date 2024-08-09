@@ -5,34 +5,22 @@
 # @Date: 2024-08-01
 # @Filename: main.py
 
+import asyncio
 import os
 import sys
-import asyncio
 
 # Add the parent directory of the script to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.gfa_actions import ping, status, grabone, cam_params, graball
+from src.gfa_actions import cam_params, grab, ping, status
+
 
 async def main():
-    CamNum = 1
-
-    # Check the status of the camera
-    print("Checking status of camera...")
-    status()
-    
-    # Example of how you might use other functions
-    # Uncomment and adjust as needed
-    print("Pinging camera...")
-    ping(0)
-    
-    # print(f"Grabbing one frame from camera {CamNum}...")
-    # grabone(CamNum, 0.1)
-    
-    # print(f"Checking the parameters from camera {CamNum}...")
-    # cam_params(CamNum)
-    
-    # await graball()
+    camnum = [4, 6]
+    # ping()
+    # status()
+    # cam_params()
+    await grab()
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -15,11 +15,13 @@ class GFAError(Exception):
     def __init__(self, e: str):
         super().__init__(f"{e}")
 
+
 class GFAinitError(Exception):
     """A general ``GFA`` error."""
 
     def __init__(self, e: str):
         super().__init__(f"{e}")
+
 
 class GFAConfigError(Exception):
     """A general ``GFA`` error."""
