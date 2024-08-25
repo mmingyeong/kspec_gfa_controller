@@ -1,6 +1,7 @@
 # kspec_gfa_controller
 
 ![Versions](https://img.shields.io/badge/python-3.9+-blue)
+[![PyPI version](https://img.shields.io/pypi/v/kspec-gfa-controller.svg)](https://pypi.org/project/kspec-gfa-controller/)
 ![Ruff](https://github.com/mmingyeong/kspec_gfa_controller/actions/workflows/ruff.yml/badge.svg)
 [![Documentation Status](https://readthedocs.org/projects/kspec-gfa/badge/?version=latest)](https://kspec-gfa.readthedocs.io/en/latest/?badge=latest)
 
