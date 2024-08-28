@@ -8,10 +8,8 @@
 import os
 import asyncio
 
-from controller.src.gfa_controller import gfa_controller
-from controller.src.gfa_logger import gfa_logger
-
-__all__ = ["offset", "status", "ping", "cam_params", "grab"]
+from kspec_gfa_controller.src.gfa_controller import gfa_controller
+from kspec_gfa_controller.src.gfa_logger import gfa_logger
 
 def get_config_path():
     """
@@ -37,10 +35,12 @@ def get_config_path():
 
     return config_path
 
-
 config_path = get_config_path()
 logger = gfa_logger(__file__)
 controller = gfa_controller(config_path, logger)
+
+# 전역 변수로 grab_loop의 실행 여부를 제어
+_grab_loop_running = False
 
 def status():
     """
@@ -84,7 +84,7 @@ def cam_params(CamNum=0):
         controller.cam_params(CamNum)
 
 
-async def grab(CamNum=0, ExpTime=1, Bininng=4):
+async def grab(CamNum=0, ExpTime=1, Bininng=4, save=True):
     """
     Grab an image from the specified camera(s).
 
@@ -105,14 +105,79 @@ async def grab(CamNum=0, ExpTime=1, Bininng=4):
     """
     if isinstance(CamNum, int):
         if CamNum == 0:
-            await controller.grab(CamNum, ExpTime, Bininng)
+            await controller.grab(CamNum, ExpTime, Bininng, save)
         else:
-            await controller.grabone(CamNum, ExpTime, Bininng)
+            await controller.grabone(CamNum, ExpTime, Bininng, save)
     elif isinstance(CamNum, list):
-        await controller.grab(CamNum, ExpTime, Bininng)
+        await controller.grab(CamNum, ExpTime, Bininng, save)
     else:
         print(f"Wrong Input {CamNum}")
 
+async def grab_loop(CamNum=0, ExpTime=1, Bininng=4, save=False, interval=10):
+    """
+    Continuously calls the `grab` method at specified intervals until `stop_grab_loop` is called.
+
+    Parameters
+    ----------
+    CamNum : int or list of int
+        The number identifier of the camera(s) from which to grab images.
+        If 0, grabs from all available cameras. If a list, grabs from the specified cameras.
+    ExpTime : float
+        The exposure time in seconds for the image capture.
+    Bininng : int
+        The binning size for both horizontal and vertical directions.
+    save : bool, optional
+        Whether to save the grabbed images to storage, by default False.
+    interval : int, optional
+        The interval in seconds between consecutive grabs, by default 5.
+
+    Notes
+    -----
+    The loop will continue running until `stop_grab_loop` is called.
+    """
+    global _grab_loop_running
+    logger.info("Starting grab loop with interval: {interval} seconds")
+    logger.debug(f"Executing grab with CamNum={str(CamNum)}, ExpTime={ExpTime}, Bininng={Bininng}, save={save}")
+    _grab_loop_running = True
+    while _grab_loop_running:
+        await controller.grab(CamNum, ExpTime, Bininng, save)
+        logger.info(f"Waiting for {interval} seconds before the next grab")
+        await asyncio.sleep(interval)
+
+def stop_grab_loop():
+    """
+    Stops the `grab_loop` from running.
+
+    This function sets the internal flag that controls the execution of the `grab_loop` to False,
+    causing the loop to exit after the current iteration.
+
+    Notes
+    -----
+    If the `grab_loop` is not running, this function has no effect.
+    """
+    global _grab_loop_running
+    if _grab_loop_running:
+        logger.info("Stopping grab loop.")
+        _grab_loop_running = False
+    else:
+        logger.warning("Attempted to stop grab loop, but it was not running.")
+
+def is_grab_loop_running():
+    """
+    Returns whether the `grab_loop` is currently running.
+
+    Returns
+    -------
+    bool
+        True if `grab_loop` is running, False otherwise.
+
+    Notes
+    -----
+    This function is useful for checking the status of the `grab_loop` in cases where
+    you need to ensure the loop is either running or has been stopped.
+    """
+    logger.info(f"Grab loop running status: {_grab_loop_running}")
+    return _grab_loop_running
 
 def offset(Ra, Dec):
     """

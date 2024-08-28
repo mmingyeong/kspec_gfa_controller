@@ -12,8 +12,8 @@ from datetime import datetime
 __all__ = ["gfa_img"]
 
 class gfa_img:
-    def __init__(self):
-        pass
+    def __init__(self, logger):
+        self.logger = logger
     
     def save_fits(
         self,
@@ -74,11 +74,15 @@ class gfa_img:
             try:
                 os.makedirs(output_directory)
             except OSError as e:
-                print(f"Error creating directory {output_directory}: {e}")
+                self.logger.error(f"Error creating directory {output_directory}: {e}")
                 raise
 
         # Define full path for the FITS file
         filepath = os.path.join(output_directory, filename)
+        self.logger.debug(f"FITS file will be saved to: {filepath}")
+
+        # Log the image array size
+        self.logger.debug(f"Image array shape: {image_array.shape}")
 
         # 현재 날짜와 시간을 가져옵니다.
         now = datetime.now()
@@ -108,7 +112,12 @@ class gfa_img:
         header["DEC"] = dec if dec is not None else "UNKNOWN"
         header["EXPTIME"] = exptime
         header["COMMENT"] = "FITS file created with custom header fields"
-
+        
+        # 망원경 point 방향 (ra, dec)
+        
+        # Log header details
+        self.logger.debug(f"FITS header details: {header}")
+        
         # Create a PrimaryHDU object with the image data and header
         hdu = fits.PrimaryHDU(data=image_array, header=header)
 
@@ -116,8 +125,7 @@ class gfa_img:
         hdul = fits.HDUList([hdu])
         try:
             hdul.writeto(filepath, overwrite=True)
+            self.logger.info(f"FITS file successfully saved to {filepath}")
         except OSError as e:
-            print(f"Error writing FITS file {filepath}: {e}")
+            self.logger.error(f"Error writing FITS file {filepath}: {e}")
             raise
-
-        print(f"FITS file saved to {filepath}")

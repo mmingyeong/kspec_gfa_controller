@@ -12,14 +12,16 @@ import sys
 # Add the parent directory of the script to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.gfa_actions import cam_params, grab, ping, status
+from src.gfa_actions import cam_params, grab, ping, status, grab_loop, is_grab_loop_running
 
 async def main():
-    camnum = [4, 6]
+    camnum = 0
     # ping()
-    # status()
-    cam_params(4)
-    # await grab()
+    #status()
+    #cam_params()
+    await grab()
+    #await grab_loop()
+    #is_grab_loop_running()
 
 
 if __name__ == "__main__":
