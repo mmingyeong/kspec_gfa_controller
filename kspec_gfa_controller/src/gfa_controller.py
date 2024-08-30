@@ -203,7 +203,7 @@ class gfa_controller:
         # Close the camera
         camera.Close()
 
-    async def grabone(self, CamNum, ExpTime, Bininng, save=True):
+    async def grabone(self, CamNum, ExpTime, Bininng):
         """
         Grabs an image from the specified camera, sets exposure time and binning parameters.
 
@@ -267,13 +267,12 @@ class gfa_controller:
             res = camera.GrabOne(self.grab_timeout)
             img = res.GetArray()
             filename = f"{formatted}_grabone_cam{CamNum}.fits"
-            if save==True:
-                self.img_class.save_fits(image_array=img, filename=filename, exptime=ExpTime)
+            self.img_class.save_fits(image_array=img, filename=filename, exptime=ExpTime)
 
-                fig = plt.figure()
-                plt.imshow(img)
-                fig.savefig(f"save/{filename}.png", dpi=300, bbox_inches="tight")
-                plt.close(fig)
+            fig = plt.figure()
+            plt.imshow(img)
+            fig.savefig(f"save/{filename}.png", dpi=300, bbox_inches="tight")
+            plt.close(fig)
                 
         except genicam.TimeoutException:
             self.logger.error(
@@ -287,7 +286,7 @@ class gfa_controller:
         self.logger.info(f"Exposure time for camera {CamNum}: {ExpTime} sec")
         self.logger.info(f"Process time for camera {CamNum}: {now2 - now1} sec")
 
-    async def grab(self, CamNum, ExpTime, Bininng, save=True):
+    async def grab(self, CamNum, ExpTime, Bininng):
         """
         Grabs images from specified cameras either individually or all cameras.
 
@@ -366,13 +365,13 @@ class gfa_controller:
         # Execute asynchronous tasks
         with ThreadPoolExecutor() as executor:
             loop = asyncio.get_running_loop()
-            tasks = [self.process_camera(d, ExpTime, Bininng, save) for d in devices]
+            tasks = [self.process_camera(d, ExpTime, Bininng) for d in devices]
             await asyncio.gather(*tasks)
 
         now2 = time.time()
         self.logger.info(f"Final process time for grab: {now2 - now1:.2f} seconds")
 
-    async def process_camera(self, device, ExpTime, Bininng, save):
+    async def process_camera(self, device, ExpTime, Bininng):
         """
         Processes a single camera: opens it, sets exposure time and binning parameters, grabs an image, and saves it.
 
@@ -433,17 +432,16 @@ class gfa_controller:
             img = result.GetArray()
             self.logger.info(f"Image grabbed from camera: {serial_number}")
             
-            if save==True:
-                filename = f"{formatted}_grab_cam_{serial_number}.fits"
-                png_filename = f"save/{formatted}_grab_cam_{serial_number}.png"
-                # Save FITS file
-                self.img_class.save_fits(image_array=img, filename=filename, exptime=ExpTime)
+            filename = f"{formatted}_grab_cam_{serial_number}.fits"
+            png_filename = f"save/{formatted}_grab_cam_{serial_number}.png"
+            # Save FITS file
+            self.img_class.save_fits(image_array=img, filename=filename, exptime=ExpTime)
 
-                # Save PNG file
-                fig = plt.figure()
-                plt.imshow(img)
-                fig.savefig(png_filename, dpi=300, bbox_inches="tight")
-                plt.close(fig)
+            # Save PNG file
+            fig = plt.figure()
+            plt.imshow(img)
+            fig.savefig(png_filename, dpi=300, bbox_inches="tight")
+            plt.close(fig)
 
         except genicam.TimeoutException:
             self.logger.error(

@@ -28,7 +28,7 @@ class gfa_img:
         time_obs=None,
         ra=None,
         dec=None,
-        output_directory="save",
+        output_directory="grab_save",
     ):
         """
         Save an image array to a FITS file with an extended header.
