@@ -21,6 +21,35 @@ gfa_relative_config_path = "etc/cams.json"
 ast_relative_config_path = "etc/astrometry_params.json"
 grab_file_path = "grab_save"
 
+def get_config_path(relative_config_path):
+    """
+    Calculate and return the absolute path of the configuration file.
+
+    Parameters
+    ----------
+    relative_config_path : str
+        The relative path of the configuration file.
+
+    Returns
+    -------
+    str
+        Absolute path of the configuration file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the configuration file does not exist at the calculated path.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, relative_config_path)
+
+    if not os.path.isfile(config_path):
+        logger.error(f"Config file not found: {config_path}")
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    logger.info(f"Configuration file found: {config_path}")
+    return config_path
+
 def initialize():
     global gfa_config_path, controller, ast_config_path, astrometry, guider
     
@@ -149,34 +178,6 @@ async def guiding_loop(stop_event):
         
         await asyncio.sleep(1)  # Asynchronous wait to prevent blocking
 
-def get_config_path(relative_config_path):
-    """
-    Calculate and return the absolute path of the configuration file.
-
-    Parameters
-    ----------
-    relative_config_path : str
-        The relative path of the configuration file.
-
-    Returns
-    -------
-    str
-        Absolute path of the configuration file.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the configuration file does not exist at the calculated path.
-    """
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    config_path = os.path.join(script_dir, relative_config_path)
-
-    if not os.path.isfile(config_path):
-        logger.error(f"Config file not found: {config_path}")
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-
-    logger.info(f"Configuration file found: {config_path}")
-    return config_path
 
 async def check_for_input(stop_event):
     """
