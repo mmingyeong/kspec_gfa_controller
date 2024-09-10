@@ -2,14 +2,14 @@ import asyncio
 from contextlib import suppress
 
 
-class gfa_loop_test:
+class GfaLoopTest:
     async def start_loop(self):
         self._check_task = asyncio.create_task(self._check_loop())
-        
         return self
             
     async def stop_loop(self):
-        await self.cancel_task(self._check_task)
+        if hasattr(self, '_check_task'):
+            await self.cancel_task(self._check_task)
 
     async def _check_loop(self):
         while True:
@@ -18,10 +18,19 @@ class gfa_loop_test:
 
     async def cancel_task(self, task: asyncio.Future):
         """Safely cancels a task."""
-
         if task is None or task.done():
             return
 
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
+
+"""
+async def main():
+    cl = await GfaLoopTest().start_loop()  # 루프 시작
+    await asyncio.sleep(5)  # 루프가 5초 동안 실행되도록 대기
+    await cl.stop_loop()  # 루프 종료
+
+if __name__ == "__main__":
+    asyncio.run(main())
+"""
