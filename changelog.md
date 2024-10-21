@@ -60,3 +60,21 @@
   - Updated Sphinx documentation
 - **CI/CD**:
   - Added GitHub Actions workflow files for Ruff and Sphinx documentation
+
+## Version 0.7.0
+- **Date**: 2024-10-21
+- **Changes to `dictionary_data.json`**:
+  - Updated guiding image storage path to `raw/, procimg/, tempfiles/, astroimg`.
+  - Updated grab image storage path to: `grab_save_path = "/opt/kspec_gfa_controller/Image/grab"`.
+  - Reorganized parameters and verified their usage within the code.
+- **Folder Access Permissions**:
+  - Modified `kspec_gfa_controller/scripts/set_permissions.sh` to handle permission updates.
+  - Adjusted folder access permissions for `/opt/kspec_gfa_controller/`.
+- **General Updates**:
+  - Changed the log file storage path to `/opt/kspec_gfa_controller/log`.
+  - Command outputs are now returned in JSON format.
+- **Guiding Functionality**:
+  - Conducted tests for `guiding()` and confirmed correct operation in test env.
+  - Updated astrometry and guider main sections to final execution functions:
+    - `def preproc(self):`
+    - `def exe_cal(self):`
