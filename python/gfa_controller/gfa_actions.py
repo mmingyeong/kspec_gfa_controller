@@ -148,6 +148,7 @@ class gfa_actions:
             
             logger.info("Step #3: Calculating the offset...")
             fdx, fdy = guider.exe_cal()
+
             logger.info(f"Offsets calculated: fdx={fdx}, fdy={fdy}")
             response = {
                 "status": "success",
