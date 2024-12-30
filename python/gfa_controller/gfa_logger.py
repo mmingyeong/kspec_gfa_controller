@@ -27,7 +27,7 @@ class gfa_logger:
 
     _initialized_loggers = set()  # Class attribute to track initialized loggers
 
-    def __init__(self, file, stream_level=logging.INFO, file_level=logging.DEBUG):
+    def __init__(self, file, stream_level=logging.INFO):
         """
         Initializes the logger with both stream and file handlers.
 
@@ -55,17 +55,6 @@ class gfa_logger:
         stream_handler.setFormatter(formatter)
         stream_handler.setLevel(stream_level)
         self.logger.addHandler(stream_handler)
-
-        # FileHandler for writing logs to a file
-        log_directory = "/opt/kspec_gfa_controller/log"
-        os.makedirs(log_directory, exist_ok=True)  # Ensure the log directory exists
-        log_name = self.file_name.rstrip(".py")
-        file_handler = logging.FileHandler(
-            os.path.join(log_directory, f"{log_name}.log")
-        )
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(file_level)
-        self.logger.addHandler(file_handler)
 
         # Mark this logger as initialized
         gfa_logger._initialized_loggers.add(self.file_name)

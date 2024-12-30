@@ -124,7 +124,7 @@ class gfa_actions:
                 "Binning": Bininng
             }
 
-        return json.dumps(response)
+        return response
 
     @staticmethod
     async def guiding():
@@ -162,7 +162,7 @@ class gfa_actions:
                 "message": str(e)
             }
 
-        return json.dumps(response)
+        return response
 
     @staticmethod
     def status():
@@ -185,7 +185,7 @@ class gfa_actions:
                 "message": str(e)
             }
 
-        return json.dumps(response)
+        return response
     
     @staticmethod
     def ping(CamNum=0):
@@ -218,7 +218,7 @@ class gfa_actions:
                 "CamNum": CamNum
             }
 
-        return json.dumps(response)
+        return response
 
     @staticmethod
     def cam_params(CamNum=0):
@@ -255,5 +255,5 @@ class gfa_actions:
                 "CamNum": CamNum
             }
 
-        return json.dumps(response)
+        return response
 
