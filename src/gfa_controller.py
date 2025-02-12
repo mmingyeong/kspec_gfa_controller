@@ -208,32 +208,17 @@ class gfa_controller:
         """
         Grabs an image from the specified camera, sets exposure time and binning parameters.
 
-        Parameters
-        ----------
-        CamNum : int
-            The number identifier of the camera from which to grab the image.
-        ExpTime : float
-            The exposure time in seconds.
-        Bininng : int
-            The binning size for both horizontal and vertical directions.
-
-        Raises
-        ------
-        KeyError
-            If the camera number is not found in the `cameras_info` dictionary.
-        genicam.TimeoutException
-            If there is a timeout while grabbing the image.
-
-        Notes
-        -----
-        - The method assumes the `py.DeviceInfo` and `py.InstantCamera` classes are used for camera interaction.
-        - The image is saved in both FITS and PNG formats.
-        - Binning parameters are set for both horizontal and vertical directions.
+        Returns
+        -------
+        list
+            [CamNum] if Timeout occurred, otherwise [].
         """
         self.logger.info(f"Grabbing image from camera {CamNum}, ExpTime={ExpTime}")
         now1 = time.time()
         lt = time.localtime(now1)
         formatted = time.strftime("%Y-%m-%d_%H:%M:%S", lt)
+
+        timeout_occurred = False  # Timeout 여부 추적
 
         try:
             # Retrieve camera information
@@ -254,9 +239,7 @@ class gfa_controller:
         # Set Exposure Time
         ExpTime_microsec = ExpTime * 1_000_000  # Convert seconds to microseconds
         camera.ExposureTime.SetValue(ExpTime_microsec)
-        self.logger.debug(
-            f"Setting exposure time for camera {CamNum} to {ExpTime_microsec} microseconds"
-        )
+        self.logger.debug(f"Setting exposure time for camera {CamNum} to {ExpTime_microsec} microseconds")
 
         # Set Binning mode and size
         camera.BinningHorizontal.SetValue(Bininng)
@@ -274,11 +257,10 @@ class gfa_controller:
             plt.imshow(img)
             fig.savefig(f"/home/kspec/mingyeong/png_save/{filename}.png", dpi=300, bbox_inches="tight")
             plt.close(fig)
-                
+
         except genicam.TimeoutException:
-            self.logger.error(
-                f"TimeoutException occurred while grabbing an image from camera {CamNum}"
-            )
+            self.logger.error(f"TimeoutException occurred while grabbing an image from camera {CamNum}")
+            timeout_occurred = True  # Timeout 발생 기록
 
         # Close the camera
         camera.Close()
@@ -287,90 +269,70 @@ class gfa_controller:
         self.logger.info(f"Exposure time for camera {CamNum}: {ExpTime} sec")
         self.logger.info(f"Process time for camera {CamNum}: {now2 - now1} sec")
 
+        return [CamNum] if timeout_occurred else []  # Timeout 발생 시 리스트 반환
+
+
     async def grab(self, CamNum, ExpTime, Bininng, output_dir=None):
         """
         Grabs images from specified cameras either individually or all cameras.
 
-        Depending on the value of `CamNum`, the method will grab images from:
-        - All cameras (if `CamNum` is 0)
-        - A list of specified cameras (if `CamNum` is a list of integers)
-
-        Parameters
-        ----------
-        CamNum : int or list of int
-            The number identifier of the camera(s) from which to grab images. If `0`, grabs from all cameras. If a list, grabs from the specified cameras.
-        ExpTime : float
-            The exposure time in seconds for the image capture.
-        Bininng : int
-            The binning size for both horizontal and vertical directions.
-
-        Raises
-        ------
-        KeyError
-            If any specified camera number is not found in the `cameras_info` dictionary.
-        ValueError
-            If `CamNum` is neither `0` nor a list of integers.
-
-        Notes
-        -----
-        - Uses `py.DeviceInfo` to create camera instances.
-        - Handles asynchronous image grabbing for multiple cameras using `asyncio`.
+        Returns
+        -------
+        list
+            Timeout된 카메라 리스트
         """
         devices = []
+        timeout_cameras = []  # Timeout 발생한 카메라 목록
 
         if CamNum == 0:
             self.logger.info(f"Grabbing images from all cameras, ExpTime={ExpTime}")
             now1 = time.time()
 
-            for index in range(6):
-                num = index + 1
+            for key in self.cameras_info.keys():  # 모든 카메라를 자동으로 가져오기
+                num = int(key.replace("Cam", ""))
                 try:
-                    # Retrieve camera information
-                    Cam_IpAddress = self.cameras_info[f"Cam{num}"]["IpAddress"]
+                    Cam_IpAddress = self.cameras_info[key]["IpAddress"]
                     self.logger.debug(f"Camera {num} IP address: {Cam_IpAddress}")
 
                     cam_info = py.DeviceInfo()
                     cam_info.SetIpAddress(Cam_IpAddress)
-                    devices.append(cam_info)
+                    devices.append((cam_info, num))
                 except KeyError:
-                    self.logger.error(
-                        f"Camera {num} not found in the camera information."
-                    )
+                    self.logger.error(f"Camera {num} not found in the camera information.")
 
         elif isinstance(CamNum, list):
-            self.logger.info(
-                f"Grabbing images from cameras {CamNum}, ExpTime={ExpTime}"
-            )
+            self.logger.info(f"Grabbing images from cameras {CamNum}, ExpTime={ExpTime}")
             now1 = time.time()
 
             for num in CamNum:
                 try:
-                    # Retrieve camera information
                     Cam_IpAddress = self.cameras_info[f"Cam{num}"]["IpAddress"]
                     self.logger.debug(f"Camera {num} IP address: {Cam_IpAddress}")
 
                     cam_info = py.DeviceInfo()
                     cam_info.SetIpAddress(Cam_IpAddress)
-                    devices.append(cam_info)
+                    devices.append((cam_info, num))
                 except KeyError:
-                    self.logger.error(
-                        f"Camera {num} not found in the camera information."
-                    )
+                    self.logger.error(f"Camera {num} not found in the camera information.")
 
         else:
-            self.logger.error(
-                "Invalid CamNum. It should be either 0 or a list of camera numbers."
-            )
+            self.logger.error("Invalid CamNum. It should be either 0 or a list of camera numbers.")
             raise ValueError("CamNum should be either 0 or a list of camera numbers.")
 
         # Execute asynchronous tasks
         with ThreadPoolExecutor() as executor:
             loop = asyncio.get_running_loop()
-            tasks = [self.process_camera(d, ExpTime, Bininng, output_dir) for d in devices]
-            await asyncio.gather(*tasks)
+            tasks = [self.process_camera(d, ExpTime, Bininng, output_dir) for d, num in devices]
+            results = await asyncio.gather(*tasks)
+
+        # Timeout 발생한 카메라 필터링 (devices 리스트 사용)
+        timeout_cameras = [num for (d, num), img in zip(devices, results) if img is None]
 
         now2 = time.time()
         self.logger.info(f"Final process time for grab: {now2 - now1:.2f} seconds")
+
+        return timeout_cameras  # Timeout된 카메라 리스트 반환
+
 
     async def process_camera(self, device, ExpTime, Bininng, output_dir):
         """
@@ -409,6 +371,7 @@ class gfa_controller:
         loop = asyncio.get_running_loop()
 
         img = None  # Initialize image variable
+        timeout_occurred = False  # Timeout 여부 확인
 
         # Open the camera
         camera = py.InstantCamera(self.tlf.CreateDevice(device))
@@ -445,17 +408,20 @@ class gfa_controller:
             plt.close(fig)
 
         except genicam.TimeoutException:
-            self.logger.error(
-                f"TimeoutException occurred while grabbing an image from camera {serial_number}"
-            )
+            self.logger.error(f"TimeoutException occurred while grabbing an image from camera {serial_number}")
+            timeout_occurred = True  # Timeout 발생 표시
+
         except Exception as e:
-            self.logger.error(
-                f"An unexpected error occurred while grabbing an image from camera {serial_number}: {str(e)}"
-            )
+            self.logger.error(f"An unexpected error occurred while grabbing an image from camera {serial_number}: {str(e)}")
 
         # Close the camera
         await loop.run_in_executor(None, camera.Close)
-        self.logger.info(f"Closed camera: {serial_number}")
+
+        # Timeout 발생 여부에 따라 마지막 메시지 변경
+        if timeout_occurred:
+            self.logger.info(f"Timeout occurred while grabbing image from camera {serial_number}")
+        else:
+            self.logger.info(f"Closed camera: {serial_number}")
 
         return img
 

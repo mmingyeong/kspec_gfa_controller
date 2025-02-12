@@ -13,8 +13,16 @@ __all__ = ["gfa_img"]
 
 class gfa_img:
     def __init__(self, logger):
+        """
+        Initializes the gfa_img object with a logger instance.
+
+        Parameters
+        ----------
+        logger : gfa_logger
+            A logger instance for logging messages.
+        """
         self.logger = logger
-    
+
     def save_fits(
         self,
         image_array,
@@ -51,10 +59,10 @@ class gfa_img:
             The name of the observed object (default is "Unknown").
         date_obs : str, optional
             The observation date in "YYYY-MM-DD" format
-            (default is None, which means "UNKNOWN").
+            (default is None, which means the current date will be used).
         time_obs : str, optional
             The observation time in "HH:MM:SS" format
-            (default is None, which means "UNKNOWN").
+            (default is None, which means the current time will be used).
         ra : str, optional
             The right ascension of the observed object
             (default is None, which means "UNKNOWN").
@@ -62,20 +70,31 @@ class gfa_img:
             The declination of the observed object
             (default is None, which means "UNKNOWN").
         output_directory : str, optional
-            The directory where the FITS file will be saved (default is "save").
+            The directory where the FITS file will be saved. If None, the
+            current working directory will be used. Default is None.
 
         Raises
         ------
         OSError
             If the directory for saving the FITS file cannot be created or written to.
         """
+        # Set default output directory if not provided
+        if output_directory is None:
+            output_directory = os.getcwd()
+
         # Ensure output directory exists
         if not os.path.exists(output_directory):
             try:
                 os.makedirs(output_directory)
             except OSError as e:
-                self.logger.error(f"Error creating directory {output_directory}: {e}")
+                self.logger.error(
+                    f"Error creating directory {output_directory}: {e}. Please check permissions or path validity."
+                )
                 raise
+
+        # Add .fits extension if not present
+        if not filename.endswith(".fits"):
+            filename += ".fits"
 
         # Define full path for the FITS file
         filepath = os.path.join(output_directory, filename)
@@ -84,12 +103,13 @@ class gfa_img:
         # Log the image array size
         self.logger.debug(f"Image array shape: {image_array.shape}")
 
-        # 현재 날짜와 시간을 가져옵니다.
+        # Get current date and time if not provided
         now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H:%M:%S")
 
-        # 날짜와 시간을 포맷팅합니다.
-        date_str = now.strftime("%Y-%m-%d")  # 예: 2024-08-09
-        time_str = now.strftime("%H:%M:%S")  # 예: 15:54:47
+        if date_obs is None or time_obs is None:
+            self.logger.warning("Observation date or time not provided. Defaulting to current timestamp.")
 
         # Create a FITS header
         header = fits.Header()
@@ -101,7 +121,7 @@ class gfa_img:
         header["CTYPE1"] = "PIXEL"
         header["CTYPE2"] = "PIXEL"
 
-        # Additional header information
+        # Add metadata to the header
         header["TELESCOP"] = telescope
         header["INSTRUME"] = instrument
         header["OBSERVER"] = observer
@@ -112,12 +132,9 @@ class gfa_img:
         header["DEC"] = dec if dec is not None else "UNKNOWN"
         header["EXPTIME"] = exptime
         header["COMMENT"] = "FITS file created with custom header fields"
-        
-        # 망원경 point 방향 (ra, dec)
-        
-        # Log header details
+
         self.logger.debug(f"FITS header details: {header}")
-        
+
         # Create a PrimaryHDU object with the image data and header
         hdu = fits.PrimaryHDU(data=image_array, header=header)
 

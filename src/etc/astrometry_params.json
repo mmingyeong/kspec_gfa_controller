@@ -1,11 +1,14 @@
 {
     "paths": {
         "directories": {
-            "raw_images": "/python/gfa_controller/img/raw",
-            "processed_images": "/python/gfa_controller/img/procimg",
-            "temp_files": "/python/gfa_controller/img/tempfiles",
-            "final_astrometry_images": "/opt/kspec_gfa_controller/img/astroimg",
-            "star_catalog": "/python/gfa_controller/img/combined_star.fits"
+            "raw_images": "img/raw",
+            "processed_images": "img/procimg",
+            "temp_files": "img/tempfiles",
+            "final_astrometry_images": "img/astroimg/",
+            "offset_astrometry_images": "img/astroimg/",
+            "offset_processed_images": "img/procimg",
+            "cutout_directory": "img/cutout",
+            "star_catalog": "img/combined_star.fits"
         }
     },
     "settings": {
@@ -21,7 +24,8 @@
                 "sub_ind1": [0, 1024, 0, 512],
                 "sub_ind2": [0, 1024, 512, 1024]
             },
-            "crop_indices": [12, 979, 1, 1023]
+            "crop_indices": [12, 979, 1, 1023],
+            "pixel_scale": 0.5
         }
     },
     "astrometry": {
