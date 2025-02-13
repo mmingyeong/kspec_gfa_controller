@@ -78,3 +78,18 @@
   - Updated astrometry and guider main sections to final execution functions:
     - `def preproc(self):`
     - `def exe_cal(self):`
+
+## Version 1.0.0
+- **Date**: 2024-11-15
+- **Changes to GFAAstrometry & GFAGuider**:
+  - Revised both classes for improved functionality and maintainability.
+  - Completed tests confirming the changes work as expected.
+- **Logging & Docstrings**:
+  - Reviewed and updated logging statements for clarity and consistency.
+  - Added/refined docstrings to align with code style standards.
+- **Code Style**:
+  - Conducted a comprehensive code style review (including linting/formatting).
+  - Ensured internal consistency and adherence to the project’s style guidelines.
+- **Image Save Path**:
+  - Updated image save path in modules.
+  - Verified changes through end-to-end tests.

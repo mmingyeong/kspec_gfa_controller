@@ -6,112 +6,121 @@
 # @Filename: gfa_img.py
 
 import os
-from astropy.io import fits
 from datetime import datetime
+from typing import Optional
 
-__all__ = ["gfa_img"]
+import numpy as np
+from astropy.io import fits
+import logging
 
-class gfa_img:
-    def __init__(self, logger):
+
+__all__ = ["GFAImage"]
+
+
+class GFAImage:
+    """
+    Class for handling GFA image data and saving it to FITS files with extended headers.
+
+    Attributes
+    ----------
+    logger : logging.Logger
+        A logger instance for logging messages.
+    """
+
+    def __init__(self, logger: logging.Logger) -> None:
         """
-        Initializes the gfa_img object with a logger instance.
+        Initialize the GFAImage object with a logger instance.
 
         Parameters
         ----------
-        logger : gfa_logger
+        logger : logging.Logger
             A logger instance for logging messages.
         """
         self.logger = logger
 
     def save_fits(
         self,
-        image_array,
-        filename,
-        exptime,
-        telescope="KMTNET",
-        instrument="KSPEC-GFA",
-        observer="Mingyeong",
-        object_name="Unknown",
-        date_obs=None,
-        time_obs=None,
-        ra=None,
-        dec=None,
-        output_directory=None,
-    ):
+        image_array: np.ndarray,
+        filename: str,
+        exptime: float,
+        telescope: str = "KMTNET",
+        instrument: str = "KSPEC-GFA",
+        observer: str = "Mingyeong",
+        object_name: str = "Unknown",
+        date_obs: Optional[str] = None,
+        time_obs: Optional[str] = None,
+        ra: Optional[str] = None,
+        dec: Optional[str] = None,
+        output_directory: Optional[str] = None,
+    ) -> None:
         """
         Save an image array to a FITS file with an extended header.
 
         Parameters
         ----------
         image_array : numpy.ndarray
-            The image data to save, should be a 2D array.
+            The 2D image data to save.
         filename : str
-            The name of the FITS file to save.
+            The name of the FITS file (without extension or with .fits).
         exptime : float
             The exposure time of the image in seconds.
         telescope : str, optional
-            The name of the telescope (default is "KMTNET").
+            The name of the telescope (default "KMTNET").
         instrument : str, optional
-            The name of the instrument (default is "KSPEC-GFA").
+            The name of the instrument (default "KSPEC-GFA").
         observer : str, optional
-            The name of the observer (default is "Mingyeong").
+            The name of the observer (default "Mingyeong").
         object_name : str, optional
-            The name of the observed object (default is "Unknown").
+            The name of the observed object (default "Unknown").
         date_obs : str, optional
-            The observation date in "YYYY-MM-DD" format
-            (default is None, which means the current date will be used).
+            The observation date in "YYYY-MM-DD" format. If None, uses the current date.
         time_obs : str, optional
-            The observation time in "HH:MM:SS" format
-            (default is None, which means the current time will be used).
+            The observation time in "HH:MM:SS" format. If None, uses the current time.
         ra : str, optional
-            The right ascension of the observed object
-            (default is None, which means "UNKNOWN").
+            The right ascension of the observed object (default "UNKNOWN" if None).
         dec : str, optional
-            The declination of the observed object
-            (default is None, which means "UNKNOWN").
+            The declination of the observed object (default "UNKNOWN" if None).
         output_directory : str, optional
-            The directory where the FITS file will be saved. If None, the
-            current working directory will be used. Default is None.
+            The directory where the FITS file will be saved. If None, uses the current
+            working directory.
 
         Raises
         ------
         OSError
-            If the directory for saving the FITS file cannot be created or written to.
+            If there is an error creating or writing to the specified output directory.
         """
-        # Set default output directory if not provided
+        # 1. Determine output directory
         if output_directory is None:
             output_directory = os.getcwd()
 
-        # Ensure output directory exists
         if not os.path.exists(output_directory):
             try:
                 os.makedirs(output_directory)
             except OSError as e:
                 self.logger.error(
-                    f"Error creating directory {output_directory}: {e}. Please check permissions or path validity."
+                    f"Error creating directory {output_directory}: {e}. "
+                    "Check permissions or path validity."
                 )
                 raise
 
-        # Add .fits extension if not present
-        if not filename.endswith(".fits"):
+        # 2. Ensure filename ends with .fits
+        if not filename.lower().endswith(".fits"):
             filename += ".fits"
 
-        # Define full path for the FITS file
         filepath = os.path.join(output_directory, filename)
         self.logger.debug(f"FITS file will be saved to: {filepath}")
-
-        # Log the image array size
         self.logger.debug(f"Image array shape: {image_array.shape}")
 
-        # Get current date and time if not provided
+        # 3. Default date/time if not provided
         now = datetime.now()
-        date_str = now.strftime("%Y-%m-%d")
-        time_str = now.strftime("%H:%M:%S")
+        if date_obs is None:
+            date_obs = now.strftime("%Y-%m-%d")
+            self.logger.warning("No date_obs provided. Using current date.")
+        if time_obs is None:
+            time_obs = now.strftime("%H:%M:%S")
+            self.logger.warning("No time_obs provided. Using current time.")
 
-        if date_obs is None or time_obs is None:
-            self.logger.warning("Observation date or time not provided. Defaulting to current timestamp.")
-
-        # Create a FITS header
+        # 4. Construct FITS header
         header = fits.Header()
         header["SIMPLE"] = True
         header["BITPIX"] = -32
@@ -121,25 +130,22 @@ class gfa_img:
         header["CTYPE1"] = "PIXEL"
         header["CTYPE2"] = "PIXEL"
 
-        # Add metadata to the header
         header["TELESCOP"] = telescope
         header["INSTRUME"] = instrument
         header["OBSERVER"] = observer
         header["OBJECT"] = object_name
-        header["DATE-OBS"] = date_str if date_obs is None else date_obs
-        header["TIME-OBS"] = time_str if time_obs is None else time_obs
+        header["DATE-OBS"] = date_obs
+        header["TIME-OBS"] = time_obs
         header["RA"] = ra if ra is not None else "UNKNOWN"
         header["DEC"] = dec if dec is not None else "UNKNOWN"
         header["EXPTIME"] = exptime
         header["COMMENT"] = "FITS file created with custom header fields"
-
         self.logger.debug(f"FITS header details: {header}")
 
-        # Create a PrimaryHDU object with the image data and header
+        # 5. Create and write FITS
         hdu = fits.PrimaryHDU(data=image_array, header=header)
-
-        # Create an HDUList and write it to a FITS file
         hdul = fits.HDUList([hdu])
+
         try:
             hdul.writeto(filepath, overwrite=True)
             self.logger.info(f"FITS file successfully saved to {filepath}")

@@ -9,6 +9,8 @@ import asyncio
 import json
 import os
 import time
+import logging
+import sys
 from concurrent.futures import ThreadPoolExecutor
 
 import matplotlib.pyplot as plt
@@ -16,66 +18,148 @@ import pypylon.pylon as py
 import yaml
 from pypylon import genicam
 
-#from gfa_controller.src.gfa_img import gfa_img
-from gfa_img import gfa_img
+from gfa_img import GFAImage
 
 __all__ = ["gfa_controller"]
 
-class gfa_controller:
-    """Talk to an KSPEC GFA Camera over TCP/IP."""
 
-    def __init__(self, config, logger):
+###############################################################################
+# Default Config and Logger
+###############################################################################
+def _get_default_config_path() -> str:
+    """
+    Returns the default path for the GFA camera config file.
+    Adjust this path as needed for your environment.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    default_path = os.path.join(script_dir, "etc", "cams.json")
+    if not os.path.isfile(default_path):
+        raise FileNotFoundError(
+            f"Default config file not found at: {default_path}. "
+            "Please adjust `_get_default_config_path()`."
+        )
+    return default_path
+
+
+def _get_default_logger() -> logging.Logger:
+    """
+    Returns a simple default logger if none is provided.
+    """
+    logger = logging.getLogger("gfa_controller_default")
+    # Only configure if no handlers have been set
+    if not logger.handlers:
+        logger.setLevel(logging.INFO)
+        console_handler = logging.StreamHandler(sys.stdout)
+        formatter = logging.Formatter(
+            "[%(asctime)s] %(levelname)s - %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+    return logger
+
+
+def from_config(config_path: str) -> dict:
+    """
+    Loads GFA camera configuration from a YAML or JSON file.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to the configuration file. The file can be in .yml, .yaml, or .json format.
+
+    Returns
+    -------
+    dict
+        A dictionary containing the GFA camera configuration data.
+
+    Raises
+    ------
+    ValueError
+        If the file format is unsupported (i.e., not .yml, .yaml, or .json).
+    """
+    file_extension = os.path.splitext(config_path)[1].lower()
+
+    with open(config_path, 'r') as f:
+        if file_extension in [".yml", ".yaml"]:
+            data = yaml.load(f, Loader=yaml.FullLoader)
+        elif file_extension == ".json":
+            data = json.load(f)
+        else:
+            raise ValueError(
+                "Unsupported file format. Please use a .yml, .yaml, or .json file."
+            )
+
+    return data
+
+
+###############################################################################
+# Main Controller Class
+###############################################################################
+class GFAController:
+    """Talk to a KSPEC GFA Camera over TCP/IP."""
+
+    def __init__(self, config: str = None, logger: logging.Logger = None):
         """
         Initializes the GfaController with configuration and logger.
 
         Parameters
         ----------
-        config : dict
-            Configuration dictionary containing camera and controller settings.
-        logger : gfa_logger
-            Logger instance used for logging information and errors.
+        config : str, optional
+            Path to the configuration file. If None, a default path is used.
+        logger : logging.Logger, optional
+            Logger instance for logging. If None, a default logger is created.
 
         Raises
         ------
-        Exception
-            If the configuration is not valid or missing, an exception is raised.
+        FileNotFoundError
+            If no valid default configuration file is found.
+        KeyError
+            If expected keys are not present in the configuration dictionary.
         """
+        # 1. Use default config if none provided
+        if config is None:
+            config = _get_default_config_path()
+
+        # 2. Use default logger if none provided
+        if logger is None:
+            logger = _get_default_logger()
+
         self.logger = logger
-        self.grab_timeout = 5000
-        self.img_class = gfa_img(logger)
 
+        # 3. Load configuration into self.config (dict)
         try:
-            # Load configuration
             self.config = from_config(config)
-            self.logger.info("Initializing gfa_controller")
+            self.logger.info("Initializing gfa_controller with provided config.")
+        except Exception as e:
+            self.logger.error(f"Error loading configuration from {config}: {e}")
+            raise
 
-            # Extract camera information from configuration
-            self.cameras_info = self.config["GfaController"]["Elements"]["Cameras"][
-                "Elements"
-            ]
-            #self.logger.info(f"Loaded cameras info: {self.cameras_info}")
-
+        # 4. Extract camera data from config
+        try:
+            self.cameras_info = self.config["GfaController"]["Elements"]["Cameras"]["Elements"]
         except KeyError as e:
             self.logger.error(f"Configuration key error: {e}")
             raise
-        except Exception as e:
-            self.logger.error(f"Error loading configuration: {e}")
-            raise
 
+        # 5. Set up camera environment
         self.NUM_CAMERAS = 6
         os.environ["PYLON_CAMEMU"] = f"{self.NUM_CAMERAS}"
         self.tlf = py.TlFactory.GetInstance()
 
+        # 6. Internal attributes
+        self.grab_timeout = 5000
+        self.img_class = GFAImage(logger)
         self.logger.info("GfaController initialization complete.")
 
-    def ping(self, CamNum=0):
+    def ping(self, CamNum: int = 0):
         """
         Pings the camera specified by CamNum to check connectivity.
 
         Parameters
         ----------
         CamNum : int, optional
-            The number identifier of the camera to ping. Defaults to 0.
+            The number identifier of the camera to ping. Defaults to 0 (unused or special case).
 
         Raises
         ------
@@ -84,35 +168,23 @@ class gfa_controller:
         """
         self.logger.info(f"Pinging camera(s), CamNum={CamNum}")
 
+        # Retrieve the camera's IP address
         try:
-            # Retrieve the camera's IP address from the cameras_info dictionary
             Cam_IpAddress = self.cameras_info[f"Cam{CamNum}"]["IpAddress"]
         except KeyError:
-            self.logger.error(
-                f"Camera number {CamNum} not found. Please provide a valid camera number."
-            )
+            self.logger.error(f"Camera number {CamNum} not found in config.")
             raise
 
         self.logger.debug(f"Camera {CamNum} IP address: {Cam_IpAddress}")
-        # Perform the ping test
         ping_test = os.system("ping -c 3 -w 1 " + Cam_IpAddress)
-        self.logger.info(
-            f"Pinging camera {CamNum} at {Cam_IpAddress}, result: {ping_test}"
-        )
+        self.logger.info(f"Pinging camera {CamNum} at {Cam_IpAddress}, result: {ping_test}")
 
     def status(self):
         """
         Checks and logs the connection status of all cameras.
 
-        This method iterates over a predefined range of cameras,
-        retrieves each camera's IP address, and checks its connection
-        status by attempting to open and close a connection to the camera.
-
-        Notes
-        -----
-        - The method assumes there are up to 6 cameras, indexed from 1 to 6.
-        - It uses the `py.DeviceInfo` and `py.InstantCamera` classes to interact with the camera.
-        - Cameras are opened and closed to verify their connectivity status.
+        Iterates over a predefined range of cameras, retrieves each camera's IP address,
+        and checks its connection status by attempting to open and close the camera.
         """
         self.logger.info("Checking status of all cameras")
         for num in range(6):
@@ -126,58 +198,47 @@ class gfa_controller:
                 camera = py.InstantCamera(self.tlf.CreateDevice(cam_info))
                 camera.Open()
                 self.logger.info(f"Camera {index} is online and in standby mode.")
-
-                # Close the camera connection
                 camera.Close()
+
             except Exception as e:
                 self.logger.error(f"Error with camera {index} ({Cam_IpAddress}): {e}")
 
-    def cam_params(self, CamNum):
+    def cam_params(self, CamNum: int):
         """
-        Retrieves and logs the parameters of the specified camera.
+        Retrieves and logs parameters of the specified camera.
 
         Parameters
         ----------
         CamNum : int
-            The number identifier of the camera whose parameters are to be retrieved.
+            Camera number for which to retrieve parameters.
 
         Raises
         ------
         KeyError
             If the camera number is not found in the `cameras_info` dictionary.
-
-        Notes
-        -----
-        - The method assumes the camera information includes IP address and serial number.
-        - It uses the `py.DeviceInfo` and `py.InstantCamera` classes to interact with the camera.
-        - It logs detailed camera parameters and handles exceptions when accessing attributes.
         """
-        self.logger.info(f"Checking the parameters from camera {CamNum}")
+        self.logger.info(f"Checking parameters of camera {CamNum}")
 
+        # Retrieve camera information
         try:
-            # Retrieve camera information
             Cam_IpAddress = self.cameras_info[f"Cam{CamNum}"]["IpAddress"]
             Cam_SerialNumber = self.cameras_info[f"Cam{CamNum}"]["SerialNumber"]
         except KeyError:
-            self.logger.error(
-                f"Invalid camera number {CamNum}. Please provide a valid camera number."
-            )
+            self.logger.error(f"Invalid camera number {CamNum}.")
             raise
 
         self.logger.debug(
-            f"Camera {CamNum} IP address: {Cam_IpAddress}, Serial number: {Cam_SerialNumber}"
+            f"Camera {CamNum} IP: {Cam_IpAddress}, Serial: {Cam_SerialNumber}"
         )
 
         cam_info = py.DeviceInfo()
         cam_info.SetIpAddress(Cam_IpAddress)
         camera = py.InstantCamera(self.tlf.CreateDevice(cam_info))
-
-        # Open the camera
-        self.logger.debug(f"Opening camera {CamNum}")
         camera.Open()
 
         self.logger.info("Camera Device Information")
         self.logger.info("=========================")
+
         info_attributes = [
             ("DeviceModelName", "DeviceModelName"),
             ("DeviceSerialNumber", "DeviceSerialNumber"),
@@ -195,63 +256,60 @@ class gfa_controller:
         for label, attribute in info_attributes:
             try:
                 value = getattr(camera, attribute).GetValue()
-                self.logger.info(f"{label} : {value}")
+                # Changed from info to debug for verbose device data
+                self.logger.debug(f"{label} : {value}")
             except Exception as e:
-                self.logger.error(
-                    f"AccessException occurred while accessing {label}: {e}"
-                )
+                self.logger.error(f"AccessException for {label}: {e}")
 
-        # Close the camera
         camera.Close()
 
-    async def grabone(self, CamNum, ExpTime, Bininng, output_dir=None):
+    async def grabone(self, CamNum: int, ExpTime: float, Bininng: int, output_dir: str = None):
         """
-        Grabs an image from the specified camera, sets exposure time and binning parameters.
+        Grabs an image from the specified camera, sets exposure time and binning.
 
         Returns
         -------
         list
-            [CamNum] if Timeout occurred, otherwise [].
+            [CamNum] if timeout occurred, otherwise [].
         """
         self.logger.info(f"Grabbing image from camera {CamNum}, ExpTime={ExpTime}")
         now1 = time.time()
-        lt = time.localtime(now1)
-        formatted = time.strftime("%Y-%m-%d_%H:%M:%S", lt)
+        formatted = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime(now1))
+        timeout_occurred = False
 
-        timeout_occurred = False  # Timeout 여부 추적
-
+        # Retrieve camera info
         try:
-            # Retrieve camera information
             Cam_IpAddress = self.cameras_info[f"Cam{CamNum}"]["IpAddress"]
-            self.logger.debug(f"Camera {CamNum} IP address: {Cam_IpAddress}")
+            self.logger.debug(f"Camera {CamNum} IP: {Cam_IpAddress}")
         except KeyError:
-            self.logger.error(f"No Camera {CamNum} found in the camera information.")
+            self.logger.error(f"No Camera {CamNum} in config.")
             raise
 
         cam_info = py.DeviceInfo()
         cam_info.SetIpAddress(Cam_IpAddress)
         camera = py.InstantCamera(self.tlf.CreateDevice(cam_info))
-
-        # Open the camera
-        self.logger.debug(f"Opening camera {CamNum}")
         camera.Open()
 
-        # Set Exposure Time
-        ExpTime_microsec = ExpTime * 1_000_000  # Convert seconds to microseconds
+        # Set exposure time in microseconds
+        ExpTime_microsec = ExpTime * 1_000_000
         camera.ExposureTime.SetValue(ExpTime_microsec)
-        self.logger.debug(f"Setting exposure time for camera {CamNum} to {ExpTime_microsec} microseconds")
+        self.logger.debug(f"Set exposure time: {ExpTime_microsec} μs")
 
-        # Set Binning mode and size
+        # Set Binning
         camera.BinningHorizontal.SetValue(Bininng)
         camera.BinningVertical.SetValue(Bininng)
-        self.logger.debug(f"Setting binning for camera {CamNum} to {Bininng}x{Bininng}")
+        self.logger.debug(f"Set binning: {Bininng}x{Bininng}")
 
+        # Grab image
         try:
-            self.grab_timeout = 10000  # Define grab timeout = 10 sec
+            self.grab_timeout = 10000
             res = camera.GrabOne(self.grab_timeout)
             img = res.GetArray()
             filename = f"{formatted}_grabone_cam{CamNum}.fits"
-            self.img_class.save_fits(image_array=img, filename=filename, exptime=ExpTime, output_directory=output_dir)
+            self.img_class.save_fits(image_array=img,
+                                     filename=filename,
+                                     exptime=ExpTime,
+                                     output_directory=output_dir)
 
             fig = plt.figure()
             plt.imshow(img)
@@ -259,46 +317,44 @@ class gfa_controller:
             plt.close(fig)
 
         except genicam.TimeoutException:
-            self.logger.error(f"TimeoutException occurred while grabbing an image from camera {CamNum}")
-            timeout_occurred = True  # Timeout 발생 기록
+            self.logger.error(f"TimeoutException while grabbing image from camera {CamNum}")
+            timeout_occurred = True
 
-        # Close the camera
         camera.Close()
 
         now2 = time.time()
-        self.logger.info(f"Exposure time for camera {CamNum}: {ExpTime} sec")
-        self.logger.info(f"Process time for camera {CamNum}: {now2 - now1} sec")
+        # Changed from info to debug
+        self.logger.debug(f"Exposure time for camera {CamNum}: {ExpTime} sec")
+        self.logger.debug(f"Process time for camera {CamNum}: {now2 - now1} sec")
 
-        return [CamNum] if timeout_occurred else []  # Timeout 발생 시 리스트 반환
+        return [CamNum] if timeout_occurred else []
 
-
-    async def grab(self, CamNum, ExpTime, Bininng, output_dir=None):
+    async def grab(self, CamNum, ExpTime: float, Bininng: int, output_dir: str = None):
         """
-        Grabs images from specified cameras either individually or all cameras.
+        Grabs images from specified cameras or all cameras.
 
         Returns
         -------
         list
-            Timeout된 카메라 리스트
+            List of cameras for which timeouts occurred.
         """
         devices = []
-        timeout_cameras = []  # Timeout 발생한 카메라 목록
+        timeout_cameras = []
 
         if CamNum == 0:
-            self.logger.info(f"Grabbing images from all cameras, ExpTime={ExpTime}")
+            self.logger.info(f"Grabbing images from ALL cameras, ExpTime={ExpTime}")
             now1 = time.time()
 
-            for key in self.cameras_info.keys():  # 모든 카메라를 자동으로 가져오기
+            for key in self.cameras_info.keys():
                 num = int(key.replace("Cam", ""))
                 try:
                     Cam_IpAddress = self.cameras_info[key]["IpAddress"]
-                    self.logger.debug(f"Camera {num} IP address: {Cam_IpAddress}")
-
+                    self.logger.debug(f"Camera {num} IP: {Cam_IpAddress}")
                     cam_info = py.DeviceInfo()
                     cam_info.SetIpAddress(Cam_IpAddress)
                     devices.append((cam_info, num))
                 except KeyError:
-                    self.logger.error(f"Camera {num} not found in the camera information.")
+                    self.logger.error(f"Camera {num} not found in config.")
 
         elif isinstance(CamNum, list):
             self.logger.info(f"Grabbing images from cameras {CamNum}, ExpTime={ExpTime}")
@@ -307,162 +363,95 @@ class gfa_controller:
             for num in CamNum:
                 try:
                     Cam_IpAddress = self.cameras_info[f"Cam{num}"]["IpAddress"]
-                    self.logger.debug(f"Camera {num} IP address: {Cam_IpAddress}")
-
+                    self.logger.debug(f"Camera {num} IP: {Cam_IpAddress}")
                     cam_info = py.DeviceInfo()
                     cam_info.SetIpAddress(Cam_IpAddress)
                     devices.append((cam_info, num))
                 except KeyError:
-                    self.logger.error(f"Camera {num} not found in the camera information.")
-
+                    self.logger.error(f"Camera {num} not found in config.")
         else:
-            self.logger.error("Invalid CamNum. It should be either 0 or a list of camera numbers.")
-            raise ValueError("CamNum should be either 0 or a list of camera numbers.")
+            self.logger.error("Invalid CamNum. Must be 0 or a list of camera numbers.")
+            raise ValueError("CamNum should be 0 or a list of camera numbers.")
 
-        # Execute asynchronous tasks
+        # Gather tasks for parallel execution
         with ThreadPoolExecutor() as executor:
             loop = asyncio.get_running_loop()
-            tasks = [self.process_camera(d, ExpTime, Bininng, output_dir) for d, num in devices]
+            tasks = [self.process_camera(d, ExpTime, Bininng, output_dir) for d, _ in devices]
             results = await asyncio.gather(*tasks)
 
-        # Timeout 발생한 카메라 필터링 (devices 리스트 사용)
-        timeout_cameras = [num for (d, num), img in zip(devices, results) if img is None]
+        # Identify which cameras timed out
+        timeout_cameras = [num for ((_, num), img) in zip(devices, results) if img is None]
 
         now2 = time.time()
-        self.logger.info(f"Final process time for grab: {now2 - now1:.2f} seconds")
+        # Changed from info to debug
+        self.logger.debug(f"Final process time for grab: {now2 - now1:.2f} seconds")
 
-        return timeout_cameras  # Timeout된 카메라 리스트 반환
+        return timeout_cameras
 
-
-    async def process_camera(self, device, ExpTime, Bininng, output_dir):
+    async def process_camera(self, device, ExpTime: float, Bininng: int, output_dir: str = None):
         """
-        Processes a single camera: opens it, sets exposure time and binning parameters, grabs an image, and saves it.
-
-        Parameters
-        ----------
-        device : py.DeviceInfo
-            The camera device information used to create and control the camera instance.
-        ExpTime : float
-            The exposure time in seconds for capturing the image.
-        Bininng : int
-            The binning size for both horizontal and vertical directions.
+        Opens a camera, sets parameters, grabs an image, and saves it.
 
         Returns
         -------
-        img : numpy.ndarray or None
-            The captured image as a NumPy array. Returns `None` if an error occurs.
-
-        Raises
-        ------
-        genicam.TimeoutException
-            If there is a timeout while grabbing the image.
-        Exception
-            For any other unexpected errors during image capture.
-
-        Notes
-        -----
-        - Uses `py.InstantCamera` for camera operations.
-        - Executes camera operations asynchronously using `asyncio` and `run_in_executor`.
-        - Saves the captured image in FITS and PNG formats.
+        numpy.ndarray or None
+            Image array if successful, or None if a timeout or error occurred.
         """
         now1 = time.time()
-        lt = time.localtime(now1)
-        formatted = time.strftime("%Y-%m-%d %H:%M:%S", lt)
+        formatted = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime(now1))
         loop = asyncio.get_running_loop()
+        img = None
+        timeout_occurred = False
 
-        img = None  # Initialize image variable
-        timeout_occurred = False  # Timeout 여부 확인
-
-        # Open the camera
         camera = py.InstantCamera(self.tlf.CreateDevice(device))
         camera.Open()
-        serial_number = await loop.run_in_executor(
-            None, camera.DeviceSerialNumber.GetValue
-        )
-        self.logger.info(f"Opened camera: {serial_number}")
+        serial_number = await loop.run_in_executor(None, camera.DeviceSerialNumber.GetValue)
+        # Changed to debug
+        self.logger.debug(f"Opened camera: {serial_number}")
 
-        # Set Exposure Time
-        ExpTime_microsec = ExpTime * 1_000_000  # Convert seconds to microseconds
+        # Configure camera
+        ExpTime_microsec = ExpTime * 1_000_000
         await loop.run_in_executor(None, camera.ExposureTime.SetValue, ExpTime_microsec)
-
-        # Set Binning mode and size
         await loop.run_in_executor(None, camera.BinningHorizontal.SetValue, Bininng)
         await loop.run_in_executor(None, camera.BinningVertical.SetValue, Bininng)
 
-        # Grab the image
+        # Grab image
         try:
-            self.grab_timeout = 5000  # Define grab timeout
+            self.grab_timeout = 5000
             result = await loop.run_in_executor(None, camera.GrabOne, self.grab_timeout)
             img = result.GetArray()
             self.logger.info(f"Image grabbed from camera: {serial_number}")
-            
+
             filename = f"{formatted}_grab_cam_{serial_number}.fits"
             png_filename = f"{formatted}_grab_cam_{serial_number}.png"
-            # Save FITS file
-            self.img_class.save_fits(image_array=img, filename=filename, exptime=ExpTime, output_directory=output_dir)
 
-            # Save PNG file
+            # Save FITS
+            self.img_class.save_fits(
+                image_array=img,
+                filename=filename,
+                exptime=ExpTime,
+                output_directory=output_dir
+            )
+
+            # Save PNG
             fig = plt.figure()
             plt.imshow(img)
-            fig.savefig("/home/kspec/mingyeong/png_save/"+png_filename, dpi=300, bbox_inches="tight")
+            fig.savefig("/home/kspec/mingyeong/png_save/" + png_filename, dpi=300, bbox_inches="tight")
             plt.close(fig)
 
         except genicam.TimeoutException:
-            self.logger.error(f"TimeoutException occurred while grabbing an image from camera {serial_number}")
-            timeout_occurred = True  # Timeout 발생 표시
-
+            self.logger.error(f"TimeoutException while grabbing image from camera {serial_number}")
+            timeout_occurred = True
         except Exception as e:
-            self.logger.error(f"An unexpected error occurred while grabbing an image from camera {serial_number}: {str(e)}")
+            self.logger.error(f"Error grabbing image from camera {serial_number}: {e}")
 
-        # Close the camera
+        # Close camera
         await loop.run_in_executor(None, camera.Close)
 
-        # Timeout 발생 여부에 따라 마지막 메시지 변경
         if timeout_occurred:
-            self.logger.info(f"Timeout occurred while grabbing image from camera {serial_number}")
+            self.logger.info(f"Timeout occurred for camera {serial_number}")
+            return None
         else:
-            self.logger.info(f"Closed camera: {serial_number}")
-
-        return img
-
-
-def from_config(config):
-    """
-    Creates a dictionary of the GFA camera information from a configuration file.
-
-    This function reads the configuration file based on its extension (.yml, .yaml, .json)
-    and loads its contents into a dictionary.
-
-    Parameters
-    ----------
-    config : str
-        Path to the configuration file. The file can be in YAML (.yml or .yaml) or JSON (.json) format.
-
-    Returns
-    -------
-    dict
-        A dictionary containing the GFA camera information extracted from the configuration file.
-
-    Raises
-    ------
-    ValueError
-        If the file format is unsupported (i.e., not .yml, .yaml, or .json).
-
-    Notes
-    -----
-    - YAML files are loaded using `yaml.load` with `yaml.FullLoader`.
-    - JSON files are loaded using `json.load`.
-    """
-    file_extension = os.path.splitext(config)[1]
-
-    with open(config) as f:
-        if file_extension in [".yml", ".yaml"]:
-            film = yaml.load(f, Loader=yaml.FullLoader)
-        elif file_extension == ".json":
-            film = json.load(f)
-        else:
-            raise ValueError(
-                "Unsupported file format. Please use a .yml, .yaml, or .json file."
-            )
-
-    return film
+            # Changed to debug
+            self.logger.debug(f"Closed camera: {serial_number}")
+            return img

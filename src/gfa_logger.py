@@ -8,80 +8,133 @@
 import logging
 import os
 from datetime import datetime
+from typing import Set
 
-__all__ = ["gfa_logger"]
+__all__ = ["GFALogger"]
 
-class gfa_logger:
+
+class GFALogger:
     """
-    Custom logging system for the GFA project.
+    A custom logging system for the GFA project that initializes both
+    console (stream) and file handlers, storing logs in a 'log/' folder
+    relative to this Python file.
 
-    Parameters
+    This class prevents multiple handlers from being added to the same
+    logger by tracking initialized loggers in a class-level set.
+
+    Attributes
     ----------
-    stream_level : int, optional
-        The logging level for the console (default is logging.INFO).
+    file_name : str
+        The base filename for which the logger is created.
+    logger : logging.Logger
+        The underlying logger instance.
     """
 
-    _initialized_loggers = set()  # Track initialized loggers
+    _initialized_loggers: Set[str] = set()
+    """
+    A class-level set used to track which loggers have already been initialized.
+    Prevents adding duplicate handlers for the same file_name.
+    """
 
-    def __init__(self, file, stream_level=logging.INFO, log_dir="/home/kspec/mingyeong/kspec_gfa_controller/src/log"):
+    def __init__(
+        self,
+        file: str,
+        stream_level: int = logging.INFO,
+        log_dir: str = None
+    ) -> None:
         """
-        Initializes the logger with both a stream handler (console output) and a file handler (log file storage).
+        Initialize a logger with a console (stream) handler and a file handler.
+        Log files are placed in the `log/` directory, relative to this script.
 
         Parameters
         ----------
         file : str
-            The name of the file that will be used to create the logger.
+            The file path/name used to derive this logger's identity.
         stream_level : int, optional
-            The logging level for the console (default is logging.INFO).
+            The logging level for console output (default is logging.DEBUG).
         log_dir : str, optional
-            Directory where log files are stored (default: /home/kspec/mingyeong/kspec_gfa_controller/src/log).
+            If provided, overrides the default 'log/' folder. Otherwise,
+            logs go to '<this_script_dir>/log/'.
         """
+        # Determine the default log directory based on the current script location
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        if log_dir is None:
+            log_dir = os.path.join(script_dir, "log")
+
         self.file_name = os.path.basename(file)
         self.logger = logging.getLogger(self.file_name)
 
-        if self.file_name in gfa_logger._initialized_loggers:
-            # If logger is already initialized, return without adding handlers again
+        # If logger is already initialized, avoid adding duplicate handlers
+        if self.file_name in GFALogger._initialized_loggers:
             return
 
-        self.logger.setLevel(logging.INFO)  # Set logger to capture all levels
+        self.logger.setLevel(logging.INFO)  # Capture all messages >= INFO
 
-        # Ensure log directory exists
+        # Ensure the log directory exists
         os.makedirs(log_dir, exist_ok=True)
 
-        # Generate log file path with date-based naming
+        # Create date-based log file path
         log_filename = f"gfa_{datetime.now().strftime('%Y-%m-%d')}.log"
         log_file_path = os.path.join(log_dir, log_filename)
 
-        # Console output formatting
+        # Define a basic formatter
         formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
-        # StreamHandler for console output
+        # Stream (console) handler
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
         stream_handler.setLevel(stream_level)
         self.logger.addHandler(stream_handler)
 
-        # FileHandler for log file storage
-        file_handler = logging.FileHandler(log_file_path, mode='a', encoding='utf-8')
+        # File handler
+        file_handler = logging.FileHandler(log_file_path, mode="a", encoding="utf-8")
         file_handler.setFormatter(formatter)
-        file_handler.setLevel(logging.INFO)
+        file_handler.setLevel(logging.DEBUG)
         self.logger.addHandler(file_handler)
 
-        # Mark this logger as initialized
-        gfa_logger._initialized_loggers.add(self.file_name)
+        # Mark this logger name as initialized
+        GFALogger._initialized_loggers.add(self.file_name)
 
-    def info(self, message):
-        """Log an INFO level message."""
+    def info(self, message: str) -> None:
+        """
+        Log an INFO-level message.
+
+        Parameters
+        ----------
+        message : str
+            The message to be logged.
+        """
         self.logger.info(f"{message} (at {self.file_name})")
 
-    def debug(self, message):
-        """Log a DEBUG level message."""
+    def debug(self, message: str) -> None:
+        """
+        Log a DEBUG-level message.
+
+        Parameters
+        ----------
+        message : str
+            The message to be logged.
+        """
         self.logger.debug(f"{message} (at {self.file_name})")
 
-    def warning(self, message):
-        """Log a WARNING level message."""
+    def warning(self, message: str) -> None:
+        """
+        Log a WARNING-level message.
+
+        Parameters
+        ----------
+        message : str
+            The message to be logged.
+        """
         self.logger.warning(f"{message} (at {self.file_name})")
 
-    def error(self, message):
-        """Log an ERROR level message."""
+    def error(self, message: str) -> None:
+        """
+        Log an ERROR-level message.
+
+        Parameters
+        ----------
+        message : str
+            The message to be logged.
+        """
         self.logger.error(f"{message} (at {self.file_name})")
