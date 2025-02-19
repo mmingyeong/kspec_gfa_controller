@@ -224,7 +224,7 @@ class GFAActions:
                  f"(CamNum: {CamNum}, ExpTime: {ExpTime}, Binning: {Binning})")
             )
 
-    async def guiding(self) -> Dict[str, Any]:
+    async def guiding(self, ExpTime:float = 1.0) -> Dict[str, Any]:
         """
         The main guiding loop that grabs images, processes them with astrometry,
         and calculates offsets.
@@ -235,14 +235,16 @@ class GFAActions:
             Dictionary response indicating success or error and relevant messages.
         """
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        grab_save_path = os.path.join(base_dir, "img", "raw")
+        raw_save_path = os.path.join(base_dir, "img", "raw")
 
         try:
             self.env.logger.info("Guiding starts...")
 
             self.env.logger.info("Step #1: Grab an image (uncomment if needed).")
             # Example call:
-            # await self.grab(CamNum=0, ExpTime=0.1, Binning=4)
+            # await self.env.controller.grab(
+            #            CamNum=0, ExpTime=1, Binning=4, output_dir=raw_save_path
+            #        )
 
             self.env.logger.info("Step #2: Astrometry...")
             # If preproc() is synchronous, calling directly is fine

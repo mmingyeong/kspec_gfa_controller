@@ -257,7 +257,7 @@ class GFAController:
             try:
                 value = getattr(camera, attribute).GetValue()
                 # Changed from info to debug for verbose device data
-                self.logger.debug(f"{label} : {value}")
+                self.logger.info(f"{label} : {value}")
             except Exception as e:
                 self.logger.error(f"AccessException for {label}: {e}")
 
@@ -295,6 +295,11 @@ class GFAController:
         camera.ExposureTime.SetValue(ExpTime_microsec)
         self.logger.debug(f"Set exposure time: {ExpTime_microsec} μs")
 
+        # Set PixelFormat
+        set_PixelFormat = "Mono12"
+        camera.PixelFormat.SetValue(set_PixelFormat)
+        self.logger.debug(f"Set PixelFormat {set_PixelFormat}")
+
         # Set Binning
         camera.BinningHorizontal.SetValue(Bininng)
         camera.BinningVertical.SetValue(Bininng)
@@ -305,6 +310,7 @@ class GFAController:
             self.grab_timeout = 10000
             res = camera.GrabOne(self.grab_timeout)
             img = res.GetArray()
+            self.logger.debug(f"Max pixel value of grabbed image (Cam {CamNum}): {img.max()}")
             filename = f"{formatted}_grabone_cam{CamNum}.fits"
             self.img_class.save_fits(image_array=img,
                                      filename=filename,
@@ -411,7 +417,9 @@ class GFAController:
 
         # Configure camera
         ExpTime_microsec = ExpTime * 1_000_000
+        set_PixelFormat = "Mono12"
         await loop.run_in_executor(None, camera.ExposureTime.SetValue, ExpTime_microsec)
+        await loop.run_in_executor(None, camera.PixelFormat.SetValue, set_PixelFormat)
         await loop.run_in_executor(None, camera.BinningHorizontal.SetValue, Bininng)
         await loop.run_in_executor(None, camera.BinningVertical.SetValue, Bininng)
 
@@ -421,6 +429,7 @@ class GFAController:
             result = await loop.run_in_executor(None, camera.GrabOne, self.grab_timeout)
             img = result.GetArray()
             self.logger.info(f"Image grabbed from camera: {serial_number}")
+            self.logger.debug(f"Max pixel value of grabbed image (Cam {device}): {img.max()}")
 
             filename = f"{formatted}_grab_cam_{serial_number}.fits"
             png_filename = f"{formatted}_grab_cam_{serial_number}.png"
