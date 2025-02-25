@@ -281,13 +281,9 @@ class GFAActions:
         try:
             self.env.logger.info("Checking status of all cameras.")
             status_info = self.env.controller.status()
-            # status_info is assumed to be an iterable of camera statuses
-            status_message = "\n".join(
-                [f"Camera {i+1}: {info}" for i, info in enumerate(status_info)]
-            )
             return self._generate_response(
                 "success",
-                f"Camera status retrieved successfully:\n{status_message}"
+                status_info
             )
         except Exception as e:
             self.env.logger.error(f"Error occurred while checking status: {str(e)}")
