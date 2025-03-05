@@ -110,13 +110,9 @@ class GFAActions:
             env = create_environment()  # Your existing environment factory
         self.env = env
 
-    def _generate_response(
-        self, 
-        status: str, 
-        message: str
-    ) -> Dict[str, Any]:
+    def _generate_response(self, status: str, message: str, **kwargs) -> dict:
         """
-        Generate a standardized response dictionary.
+        Generate a response dictionary.
 
         Parameters
         ----------
@@ -124,16 +120,18 @@ class GFAActions:
             Status of the operation ('success' or 'error').
         message : str
             Message describing the operation result.
+        **kwargs : dict
+            Additional data to include in the response.
 
         Returns
         -------
         dict
             A dictionary representing the response.
         """
-        return {
-            "status": status,
-            "message": message,
-        }
+        # Ensure 'status' and 'message' are included in the response, and optionally update with additional data
+        response = {"status": status, "message": message}
+        response.update(kwargs)
+        return response
 
     async def grab(
         self, 
@@ -253,6 +251,7 @@ class GFAActions:
             self.env.logger.info("Step #3: Calculating the offset...")
             # If exe_cal() is synchronous, calling directly is fine
             fdx, fdy, fwhm = self.env.guider.exe_cal()
+            res_dic = {["fdx"]=fdx, ["fdy"]=fdy, ["fwhm"]=fwhm}
 
             self.env.logger.info(
                 f"Offsets calculated: fdx={fdx}, fdy={fdy}, FWHM={fwhm:.2f} arcsec"
@@ -260,7 +259,8 @@ class GFAActions:
             return self._generate_response(
                 "success",
                 (f"Guiding completed successfully. "
-                 f"Offsets: fdx={fdx}, fdy={fdy}, FWHM={fwhm:.5f} arcsec")
+                 f"Offsets: fdx={fdx}, fdy={fdy}, FWHM={fwhm:.5f} arcsec"),
+                res_dic
             )
         except Exception as e:
             self.env.logger.error(f"Error occurred during guiding: {str(e)}")
