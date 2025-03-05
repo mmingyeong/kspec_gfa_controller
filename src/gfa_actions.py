@@ -251,7 +251,6 @@ class GFAActions:
             self.env.logger.info("Step #3: Calculating the offset...")
             # If exe_cal() is synchronous, calling directly is fine
             fdx, fdy, fwhm = self.env.guider.exe_cal()
-            res_dic = {["fdx"]=fdx, ["fdy"]=fdy, ["fwhm"]=fwhm}
 
             self.env.logger.info(
                 f"Offsets calculated: fdx={fdx}, fdy={fdy}, FWHM={fwhm:.2f} arcsec"
@@ -260,7 +259,7 @@ class GFAActions:
                 "success",
                 (f"Guiding completed successfully. "
                  f"Offsets: fdx={fdx}, fdy={fdy}, FWHM={fwhm:.5f} arcsec"),
-                res_dic
+                fdx=fdx, fdy=fdy, fwhm=fwhm
             )
         except Exception as e:
             self.env.logger.error(f"Error occurred during guiding: {str(e)}")
