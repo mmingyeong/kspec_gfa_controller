@@ -286,7 +286,7 @@ class GFAController:
 
     async def grabone(self, CamNum: int, ExpTime: float, Bininng: int, output_dir: str = None):
         """
-        Grabs an image from the specified camera, sets exposure time and binning.
+        Grabs an image from the specified camera, sets transmission parameters, exposure, and binning.
 
         Returns
         -------
@@ -298,7 +298,6 @@ class GFAController:
         formatted = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime(now1))
         timeout_occurred = False
 
-        # Retrieve camera info
         try:
             Cam_IpAddress = self.cameras_info[f"Cam{CamNum}"]["IpAddress"]
             self.logger.debug(f"Camera {CamNum} IP: {Cam_IpAddress}")
@@ -309,54 +308,58 @@ class GFAController:
         cam_info = py.DeviceInfo()
         cam_info.SetIpAddress(Cam_IpAddress)
         camera = py.InstantCamera(self.tlf.CreateDevice(cam_info))
-        camera.Open()
 
-        # Set exposure time in microseconds
-        ExpTime_microsec = ExpTime * 1_000_000
-        camera.ExposureTime.SetValue(ExpTime_microsec)
-        self.logger.debug(f"Set exposure time: {ExpTime_microsec} μs")
-
-        # Set PixelFormat
-        set_PixelFormat = "Mono12"
-        camera.PixelFormat.SetValue(set_PixelFormat)
-        self.logger.debug(f"Set PixelFormat {set_PixelFormat}")
-
-        # Set Binning
-        camera.BinningHorizontal.SetValue(Bininng)
-        camera.BinningVertical.SetValue(Bininng)
-        self.logger.debug(f"Set binning: {Bininng}x{Bininng}")
-
-        # Grab image
         try:
+            camera.Open()
+
+            # ---- Transmission Optimization ----
+            camera.GevSCPSPacketSize.SetValue(1440)  # Packet Size
+            camera.GevSCPD.SetValue(2000)            # Inter-Packet Delay
+
+            frame_delay_base = 1500  # 8ns units
+            CamNum_index = CamNum - 1
+            frame_delay = frame_delay_base * CamNum_index
+            camera.GevSCFTD.SetValue(frame_delay)   # Frame Transmission Delay
+            # -------------------------------------
+
+            # Exposure, Pixel Format, Binning
+            ExpTime_microsec = ExpTime * 1_000_000
+            camera.ExposureTime.SetValue(ExpTime_microsec)
+            set_PixelFormat = "Mono12"
+            camera.PixelFormat.SetValue(set_PixelFormat)
+            camera.BinningHorizontal.SetValue(Bininng)
+            camera.BinningVertical.SetValue(Bininng)
+
+            # Grab Image
             self.grab_timeout = 10000
             res = camera.GrabOne(self.grab_timeout)
             img = res.GetArray()
-            self.logger.debug(f"Max pixel value of grabbed image (Cam {CamNum}): {img.max()}")
-            filename = f"{formatted}_grabone_cam{CamNum}.fits"
-            self.img_class.save_fits(image_array=img,
-                                     filename=filename,
-                                     exptime=ExpTime,
-                                     output_directory=output_dir)
 
-            fig = plt.figure()
-            plt.imshow(img)
-            # 파일 확장자 제거
-            filename_clean = os.path.splitext(filename)[0]
-            fig.savefig(f"/home/kspec/mingyeong/png_save/{filename_clean}.png", dpi=300, bbox_inches="tight")
-            plt.close(fig)
+            filename = f"{formatted}_grabone_cam{CamNum}.fits"
+            self.img_class.save_fits(
+                image_array=img,
+                filename=filename,
+                exptime=ExpTime,
+                output_directory=output_dir
+            )
+            self.logger.info(f"Image grabbed and saved from camera {CamNum}")
 
         except genicam.TimeoutException:
             self.logger.error(f"TimeoutException while grabbing image from camera {CamNum}")
             timeout_occurred = True
-
-        camera.Close()
+        except Exception as e:
+            self.logger.error(f"Error occurred while grabbing camera {CamNum}: {e}")
+            timeout_occurred = True
+        finally:
+            camera.Close()
+            self.logger.debug(f"Camera {CamNum} closed after grabbing.")
 
         now2 = time.time()
-        # Changed from info to debug
         self.logger.debug(f"Exposure time for camera {CamNum}: {ExpTime} sec")
-        self.logger.debug(f"Process time for camera {CamNum}: {now2 - now1} sec")
+        self.logger.debug(f"Process time for camera {CamNum}: {now2 - now1:.2f} sec")
 
         return [CamNum] if timeout_occurred else []
+
 
     async def grab(self, CamNum, ExpTime: float, Bininng: int, output_dir: str = None):
         """
@@ -419,7 +422,7 @@ class GFAController:
 
     async def process_camera(self, device, ExpTime: float, Bininng: int, output_dir: str = None):
         """
-        Opens a camera, sets parameters, grabs an image, and saves it.
+        Opens a camera, sets transmission parameters, grabs an image, and saves it.
 
         Returns
         -------
@@ -433,57 +436,61 @@ class GFAController:
         timeout_occurred = False
 
         camera = py.InstantCamera(self.tlf.CreateDevice(device))
-        camera.Open()
-        serial_number = await loop.run_in_executor(None, camera.DeviceSerialNumber.GetValue)
-        # Changed to debug
-        self.logger.debug(f"Opened camera: {serial_number}")
 
-        # Configure camera
-        ExpTime_microsec = ExpTime * 1_000_000
-        set_PixelFormat = "Mono12"
-        await loop.run_in_executor(None, camera.ExposureTime.SetValue, ExpTime_microsec)
-        await loop.run_in_executor(None, camera.PixelFormat.SetValue, set_PixelFormat)
-        await loop.run_in_executor(None, camera.BinningHorizontal.SetValue, Bininng)
-        await loop.run_in_executor(None, camera.BinningVertical.SetValue, Bininng)
-
-        # Grab image
         try:
-            self.grab_timeout = 5000
+            camera.Open()
+
+            # Serial Number for logging
+            serial_number = await loop.run_in_executor(None, camera.DeviceSerialNumber.GetValue)
+            self.logger.debug(f"Opened camera: {serial_number}")
+
+            # ---- Transmission Optimization ----
+            await loop.run_in_executor(None, camera.GevSCPSPacketSize.SetValue, 1440)
+            await loop.run_in_executor(None, camera.GevSCPD.SetValue, 2000)
+
+            frame_delay_base = 1500  # 8ns units
+            try:
+                cam_serial_as_int = int(serial_number[-1])  # Use last digit simple index
+                CamNum_index = cam_serial_as_int - 1
+            except ValueError:
+                CamNum_index = 0
+            frame_delay = frame_delay_base * CamNum_index
+            await loop.run_in_executor(None, camera.GevSCFTD.SetValue, frame_delay)
+            # -------------------------------------
+
+            # Exposure, Pixel Format, Binning
+            ExpTime_microsec = ExpTime * 1_000_000
+            set_PixelFormat = "Mono12"
+            await loop.run_in_executor(None, camera.ExposureTime.SetValue, ExpTime_microsec)
+            await loop.run_in_executor(None, camera.PixelFormat.SetValue, set_PixelFormat)
+            await loop.run_in_executor(None, camera.BinningHorizontal.SetValue, Bininng)
+            await loop.run_in_executor(None, camera.BinningVertical.SetValue, Bininng)
+
+            # Grab Image
+            self.grab_timeout = 10000
             result = await loop.run_in_executor(None, camera.GrabOne, self.grab_timeout)
             img = result.GetArray()
-            self.logger.info(f"Image grabbed from camera: {serial_number}")
-            self.logger.debug(f"Max pixel value of grabbed image (Cam {device}): {img.max()}")
 
             filename = f"{formatted}_grab_cam_{serial_number}.fits"
-            png_filename = f"{formatted}_grab_cam_{serial_number}.png"
-
-            # Save FITS
             self.img_class.save_fits(
                 image_array=img,
                 filename=filename,
                 exptime=ExpTime,
                 output_directory=output_dir
             )
-
-            # Save PNG
-            fig = plt.figure()
-            plt.imshow(img)
-            fig.savefig("/home/kspec/mingyeong/png_save/" + png_filename, dpi=300, bbox_inches="tight")
-            plt.close(fig)
+            self.logger.info(f"Image grabbed and saved from camera: {serial_number}")
 
         except genicam.TimeoutException:
             self.logger.error(f"TimeoutException while grabbing image from camera {serial_number}")
             timeout_occurred = True
         except Exception as e:
-            self.logger.error(f"Error grabbing image from camera {serial_number}: {e}")
+            self.logger.error(f"Error occurred while grabbing camera {serial_number}: {e}")
+            timeout_occurred = True
+        finally:
+            await loop.run_in_executor(None, camera.Close)
+            self.logger.debug(f"Camera {serial_number} closed after grabbing.")
 
-        # Close camera
-        await loop.run_in_executor(None, camera.Close)
+        now2 = time.time()
+        self.logger.debug(f"Process time for grabbing camera {serial_number}: {now2 - now1:.2f} sec")
 
-        if timeout_occurred:
-            self.logger.info(f"Timeout occurred for camera {serial_number}")
-            return None
-        else:
-            # Changed to debug
-            self.logger.debug(f"Closed camera: {serial_number}")
-            return img
+        return img if not timeout_occurred else None
