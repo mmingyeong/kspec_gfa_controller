@@ -152,6 +152,31 @@ class GFAController:
         self.img_class = GFAImage(logger)
         self.logger.info("GfaController initialization complete.")
 
+        self.open_cameras = {}  # Open된 카메라 객체를 저장
+
+    def open_all_cameras(self):
+        """모든 카메라를 Open (초기 1회만)"""
+        self.logger.info("Opening all cameras...")
+        for cam_key, cam_info in self.cameras_info.items():
+            Cam_IpAddress = cam_info["IpAddress"]
+            cam_device = py.DeviceInfo()
+            cam_device.SetIpAddress(Cam_IpAddress)
+            camera = py.InstantCamera(self.tlf.CreateDevice(cam_device))
+            camera.Open()
+            self.open_cameras[cam_key] = camera
+            self.logger.info(f"{cam_key} opened (IP {Cam_IpAddress})")
+        self.logger.info("All cameras opened successfully.")
+
+    def close_all_cameras(self):
+        """모든 Open된 카메라를 Close"""
+        self.logger.info("Closing all cameras...")
+        for cam_key, camera in self.open_cameras.items():
+            if camera.IsOpen():
+                camera.Close()
+                self.logger.info(f"{cam_key} closed.")
+        self.open_cameras.clear()
+        self.logger.info("All cameras closed.")
+
     def ping(self, CamNum: int = 0):
         """
         Pings the camera specified by CamNum to check connectivity.
@@ -199,13 +224,13 @@ class GFAController:
                 Cam_IpAddress = self.cameras_info[cam_key]["IpAddress"]
                 self.logger.debug(f"Camera {index} IP address: {Cam_IpAddress}")
 
-                cam_info = py.DeviceInfo()
-                cam_info.SetIpAddress(Cam_IpAddress)
-                camera = py.InstantCamera(self.tlf.CreateDevice(cam_info))
-                camera.Open()
+                #cam_info = py.DeviceInfo()
+                #cam_info.SetIpAddress(Cam_IpAddress)
+                #camera = py.InstantCamera(self.tlf.CreateDevice(cam_info))
+                #self.open_cameras[cam_key].Open()
 
                 # Standby 모드로 간주하는 기준 (필요시 조건 변경 가능)
-                is_standby = camera.IsOpen()  # 카메라가 열려 있으면 Standby로 간주
+                is_standby = self.open_cameras[cam_key].IsOpen()  # 카메라가 열려 있으면 Standby로 간주
                 camera_status_dict[cam_key] = is_standby  # 상태 저장
                 
                 if is_standby:
@@ -213,7 +238,7 @@ class GFAController:
                 else:
                     self.logger.warning(f"Camera {index} is online but not in standby mode.")
 
-                camera.Close()
+                #camera.Close()
 
             except Exception as e:
                 error_message = f"Error with Camera {index} ({Cam_IpAddress}): {e}"
@@ -252,10 +277,10 @@ class GFAController:
             f"Camera {CamNum} IP: {Cam_IpAddress}, Serial: {Cam_SerialNumber}"
         )
 
-        cam_info = py.DeviceInfo()
-        cam_info.SetIpAddress(Cam_IpAddress)
-        camera = py.InstantCamera(self.tlf.CreateDevice(cam_info))
-        camera.Open()
+        #cam_info = py.DeviceInfo()
+        #cam_info.SetIpAddress(Cam_IpAddress)
+        #camera = py.InstantCamera(self.tlf.CreateDevice(cam_info))
+        #camera.Open()
 
         self.logger.info("Camera Device Information")
         self.logger.info("=========================")
@@ -276,13 +301,13 @@ class GFAController:
 
         for label, attribute in info_attributes:
             try:
-                value = getattr(camera, attribute).GetValue()
+                value = getattr(self.open_cameras[CamNum], attribute).GetValue()
                 # Changed from info to debug for verbose device data
                 self.logger.info(f"{label} : {value}")
             except Exception as e:
                 self.logger.error(f"AccessException for {label}: {e}")
 
-        camera.Close()
+        #camera.Close()
 
     async def grabone(self, CamNum: int, ExpTime: float, Bininng: int, output_dir: str = None):
         """
@@ -298,41 +323,41 @@ class GFAController:
         formatted = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime(now1))
         timeout_occurred = False
 
-        try:
-            Cam_IpAddress = self.cameras_info[f"Cam{CamNum}"]["IpAddress"]
-            self.logger.debug(f"Camera {CamNum} IP: {Cam_IpAddress}")
-        except KeyError:
-            self.logger.error(f"No Camera {CamNum} in config.")
-            raise
+        #try:
+        #    Cam_IpAddress = self.cameras_info[f"Cam{CamNum}"]["IpAddress"]
+        #    self.logger.debug(f"Camera {CamNum} IP: {Cam_IpAddress}")
+        #except KeyError:
+        #    self.logger.error(f"No Camera {CamNum} in config.")
+        #    raise
 
-        cam_info = py.DeviceInfo()
-        cam_info.SetIpAddress(Cam_IpAddress)
-        camera = py.InstantCamera(self.tlf.CreateDevice(cam_info))
+        #cam_info = py.DeviceInfo()
+        #cam_info.SetIpAddress(Cam_IpAddress)
+        #camera = py.InstantCamera(self.tlf.CreateDevice(cam_info))
 
         try:
-            camera.Open()
+            #camera.Open()
 
             # ---- Transmission Optimization ----
-            camera.GevSCPSPacketSize.SetValue(1440)  # Packet Size
-            camera.GevSCPD.SetValue(2000)            # Inter-Packet Delay
+            self.open_cameras[CamNum].GevSCPSPacketSize.SetValue(1440)  # Packet Size
+            self.open_cameras[CamNum].GevSCPD.SetValue(2000)            # Inter-Packet Delay
 
             frame_delay_base = 1500  # 8ns units
             CamNum_index = CamNum - 1
             frame_delay = frame_delay_base * CamNum_index
-            camera.GevSCFTD.SetValue(frame_delay)   # Frame Transmission Delay
+            self.open_cameras[CamNum].GevSCFTD.SetValue(frame_delay)   # Frame Transmission Delay
             # -------------------------------------
 
             # Exposure, Pixel Format, Binning
             ExpTime_microsec = ExpTime * 1_000_000
-            camera.ExposureTime.SetValue(ExpTime_microsec)
+            self.open_cameras[CamNum].ExposureTime.SetValue(ExpTime_microsec)
             set_PixelFormat = "Mono12"
-            camera.PixelFormat.SetValue(set_PixelFormat)
-            camera.BinningHorizontal.SetValue(Bininng)
-            camera.BinningVertical.SetValue(Bininng)
+            self.open_cameras[CamNum].PixelFormat.SetValue(set_PixelFormat)
+            self.open_cameras[CamNum].BinningHorizontal.SetValue(Bininng)
+            self.open_cameras[CamNum].BinningVertical.SetValue(Bininng)
 
             # Grab Image
             self.grab_timeout = 10000
-            res = camera.GrabOne(self.grab_timeout)
+            res = self.open_cameras[CamNum].GrabOne(self.grab_timeout)
             img = res.GetArray()
 
             filename = f"{formatted}_grabone_cam{CamNum}.fits"
@@ -350,9 +375,9 @@ class GFAController:
         except Exception as e:
             self.logger.error(f"Error occurred while grabbing camera {CamNum}: {e}")
             timeout_occurred = True
-        finally:
-            camera.Close()
-            self.logger.debug(f"Camera {CamNum} closed after grabbing.")
+        #finally:
+            #camera.Close()
+            #self.logger.debug(f"Camera {CamNum} closed after grabbing.")
 
         now2 = time.time()
         self.logger.debug(f"Exposure time for camera {CamNum}: {ExpTime} sec")
@@ -372,6 +397,7 @@ class GFAController:
         """
         devices = []
         timeout_cameras = []
+        CamNum_list = []
 
         if CamNum == 0:
             self.logger.info(f"Grabbing images from ALL cameras, ExpTime={ExpTime}")
@@ -379,28 +405,33 @@ class GFAController:
 
             for key in self.cameras_info.keys():
                 num = int(key.replace("Cam", ""))
-                try:
-                    Cam_IpAddress = self.cameras_info[key]["IpAddress"]
-                    self.logger.debug(f"Camera {num} IP: {Cam_IpAddress}")
-                    cam_info = py.DeviceInfo()
-                    cam_info.SetIpAddress(Cam_IpAddress)
-                    devices.append((cam_info, num))
-                except KeyError:
-                    self.logger.error(f"Camera {num} not found in config.")
+                CamNum_list.append(num)
+
+            #for key in self.cameras_info.keys():
+            #    num = int(key.replace("Cam", ""))
+            #    try:
+            #        Cam_IpAddress = self.cameras_info[key]["IpAddress"]
+            #        self.logger.debug(f"Camera {num} IP: {Cam_IpAddress}")
+            #        cam_info = py.DeviceInfo()
+            #        cam_info.SetIpAddress(Cam_IpAddress)
+            #        devices.append((cam_info, num))
+            #    except KeyError:
+            #        self.logger.error(f"Camera {num} not found in config.")
 
         elif isinstance(CamNum, list):
             self.logger.info(f"Grabbing images from cameras {CamNum}, ExpTime={ExpTime}")
             now1 = time.time()
+            CamNum_list=CamNum
 
-            for num in CamNum:
-                try:
-                    Cam_IpAddress = self.cameras_info[f"Cam{num}"]["IpAddress"]
-                    self.logger.debug(f"Camera {num} IP: {Cam_IpAddress}")
-                    cam_info = py.DeviceInfo()
-                    cam_info.SetIpAddress(Cam_IpAddress)
-                    devices.append((cam_info, num))
-                except KeyError:
-                    self.logger.error(f"Camera {num} not found in config.")
+            #for num in CamNum:
+            #    try:
+            #        Cam_IpAddress = self.cameras_info[f"Cam{num}"]["IpAddress"]
+            #        self.logger.debug(f"Camera {num} IP: {Cam_IpAddress}")
+            #        cam_info = py.DeviceInfo()
+            #        cam_info.SetIpAddress(Cam_IpAddress)
+            #        devices.append((cam_info, num))
+            #    except KeyError:
+            #        self.logger.error(f"Camera {num} not found in config.")
         else:
             self.logger.error("Invalid CamNum. Must be 0 or a list of camera numbers.")
             raise ValueError("CamNum should be 0 or a list of camera numbers.")
@@ -408,7 +439,7 @@ class GFAController:
         # Gather tasks for parallel execution
         with ThreadPoolExecutor() as executor:
             loop = asyncio.get_running_loop()
-            tasks = [self.process_camera(d, ExpTime, Bininng, output_dir) for d, _ in devices]
+            tasks = [self.process_camera(CamNum, ExpTime, Bininng, output_dir) for CamNum, _ in CamNum_list]
             results = await asyncio.gather(*tasks)
 
         # Identify which cameras timed out
@@ -420,7 +451,7 @@ class GFAController:
 
         return timeout_cameras
 
-    async def process_camera(self, device, ExpTime: float, Bininng: int, output_dir: str = None):
+    async def process_camera(self, CamNum, ExpTime: float, Bininng: int, output_dir: str = None):
         """
         Opens a camera, sets transmission parameters, grabs an image, and saves it.
 
@@ -435,18 +466,18 @@ class GFAController:
         img = None
         timeout_occurred = False
 
-        camera = py.InstantCamera(self.tlf.CreateDevice(device))
+        #camera = py.InstantCamera(self.tlf.CreateDevice(device))
 
         try:
-            camera.Open()
+            #camera.Open()
 
             # Serial Number for logging
-            serial_number = await loop.run_in_executor(None, camera.DeviceSerialNumber.GetValue)
+            serial_number = await loop.run_in_executor(None, self.open_cameras[CamNum].DeviceSerialNumber.GetValue)
             self.logger.debug(f"Opened camera: {serial_number}")
 
             # ---- Transmission Optimization ----
-            await loop.run_in_executor(None, camera.GevSCPSPacketSize.SetValue, 1440)
-            await loop.run_in_executor(None, camera.GevSCPD.SetValue, 2000)
+            await loop.run_in_executor(None, self.open_cameras[CamNum].GevSCPSPacketSize.SetValue, 1440)
+            await loop.run_in_executor(None, self.open_cameras[CamNum].GevSCPD.SetValue, 2000)
 
             frame_delay_base = 1500  # 8ns units
             try:
@@ -455,20 +486,20 @@ class GFAController:
             except ValueError:
                 CamNum_index = 0
             frame_delay = frame_delay_base * CamNum_index
-            await loop.run_in_executor(None, camera.GevSCFTD.SetValue, frame_delay)
+            await loop.run_in_executor(None, self.open_cameras[CamNum].GevSCFTD.SetValue, frame_delay)
             # -------------------------------------
 
             # Exposure, Pixel Format, Binning
             ExpTime_microsec = ExpTime * 1_000_000
             set_PixelFormat = "Mono12"
-            await loop.run_in_executor(None, camera.ExposureTime.SetValue, ExpTime_microsec)
-            await loop.run_in_executor(None, camera.PixelFormat.SetValue, set_PixelFormat)
-            await loop.run_in_executor(None, camera.BinningHorizontal.SetValue, Bininng)
-            await loop.run_in_executor(None, camera.BinningVertical.SetValue, Bininng)
+            await loop.run_in_executor(None, self.open_cameras[CamNum].ExposureTime.SetValue, ExpTime_microsec)
+            await loop.run_in_executor(None, self.open_cameras[CamNum].PixelFormat.SetValue, set_PixelFormat)
+            await loop.run_in_executor(None, self.open_cameras[CamNum].BinningHorizontal.SetValue, Bininng)
+            await loop.run_in_executor(None, self.open_cameras[CamNum].BinningVertical.SetValue, Bininng)
 
             # Grab Image
             self.grab_timeout = 10000
-            result = await loop.run_in_executor(None, camera.GrabOne, self.grab_timeout)
+            result = await loop.run_in_executor(None, self.open_cameras[CamNum].GrabOne, self.grab_timeout)
             img = result.GetArray()
 
             filename = f"{formatted}_grab_cam_{serial_number}.fits"
@@ -486,11 +517,12 @@ class GFAController:
         except Exception as e:
             self.logger.error(f"Error occurred while grabbing camera {serial_number}: {e}")
             timeout_occurred = True
-        finally:
-            await loop.run_in_executor(None, camera.Close)
-            self.logger.debug(f"Camera {serial_number} closed after grabbing.")
+        #finally:
+        #    await loop.run_in_executor(None, camera.Close)
+        #    self.logger.debug(f"Camera {serial_number} closed after grabbing.")
 
         now2 = time.time()
         self.logger.debug(f"Process time for grabbing camera {serial_number}: {now2 - now1:.2f} sec")
 
         return img if not timeout_occurred else None
+

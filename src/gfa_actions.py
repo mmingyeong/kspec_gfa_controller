@@ -372,3 +372,4 @@ class GFAActions:
                 "error",
                 f"Error occurred while retrieving parameters for camera {CamNum}: {str(e)}"
             )
+        
