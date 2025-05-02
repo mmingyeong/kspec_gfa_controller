@@ -28,10 +28,10 @@ async def main():
 
     # 테스트용 액션 실행
     try:
-        #msg = await action.grab(0, 0.01)  # 예: 카메라 ID 1, 노출 시간 0.01초
-        #msg = await action.status()
+        msg = await action.grab(0, 0.01)  # 예: 카메라 ID 1, 노출 시간 0.01초
+        #msg = action.status()
         #print(f"[SUCCESS] status result: {msg}")
-        msg = action.ping()
+        #msg = action.ping()
         #print(f"[SUCCESS] ping result: {msg}")
         action.shutdown()
     except Exception as e:

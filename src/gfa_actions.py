@@ -104,60 +104,96 @@ class GFAActions:
         self,
         CamNum: Union[int, List[int]] = 0,
         ExpTime: float = 1.0,
-        Binning: int = 4
+        Binning: int = 4,
+        *,
+        packet_size: int = 8192,
+        cam_ipd: int = 367318,         # default for Cam1~5
+        cam_ftd_base: int = 0    # default for Cam1~5
     ) -> Dict[str, Any]:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         grab_save_path = os.path.join(base_dir, "img", "grab")
         self.env.logger.info(f"Image save path: {grab_save_path}")
 
-        timeout_cameras = []
-        try:
-            if isinstance(CamNum, int):
-                if CamNum == 0:
-                    self.env.logger.info(
-                        f"Grabbing image from ALL cameras (ExpTime={ExpTime}, Binning={Binning})."
-                    )
-                    timeout_cameras = await self.env.controller.grab(
-                        CamNum, ExpTime, Binning, output_dir=grab_save_path
-                    )
-                    msg = f"Images grabbed from all cameras (ExpTime={ExpTime}, Binning={Binning})."
-                    if timeout_cameras:
-                        msg += f" Timeout: {timeout_cameras}"
-                    return self._generate_response("success", msg)
-                else:
-                    self.env.logger.info(
-                        f"Grabbing image from camera {CamNum} (ExpTime={ExpTime}, Binning={Binning})."
-                    )
-                    result = await self.env.controller.grabone(
-                        CamNum, ExpTime, Binning, output_dir=grab_save_path
-                    )
-                    timeout_cameras.extend(result)
-                    msg = f"Image grabbed from camera {CamNum}."
-                    if timeout_cameras:
-                        msg += f" Timeout: {timeout_cameras[0]}"
-                    return self._generate_response("success", msg)
+        timeout_cameras: List[int] = []
 
-            elif isinstance(CamNum, list):
+        try:
+            # Single camera
+            if isinstance(CamNum, int) and CamNum != 0:
                 self.env.logger.info(
-                    f"Grabbing images from cameras {CamNum} (ExpTime={ExpTime}, Binning={Binning})."
+                    f"Grabbing from camera {CamNum} (ExpTime={ExpTime}, Binning={Binning}, PacketSize={packet_size}, IPD={cam_ipd}, FTD_Base={cam_ftd_base})"
                 )
-                timeout_cameras = await self.env.controller.grab(
-                    CamNum, ExpTime, Binning, output_dir=grab_save_path
+                result = await self.env.controller.grabone(
+                    CamNum=CamNum,
+                    ExpTime=ExpTime,
+                    Binning=Binning,
+                    output_dir=grab_save_path,
+                    packet_size=packet_size,
+                    ipd=cam_ipd,
+                    ftd_base=cam_ftd_base,
                 )
+                timeout_cameras.extend(result)
+                msg = f"Image grabbed from camera {CamNum}."
+                if timeout_cameras:
+                    msg += f" Timeout: {timeout_cameras[0]}"
+                return self._generate_response("success", msg)
+
+            # All cameras with individual settings
+            if isinstance(CamNum, int) and CamNum == 0:
+                self.env.logger.info("Grabbing from ALL cameras with per-camera settings")
+                for cam_id in range(1, self.env.camera_count + 1):
+
+                    self.env.logger.info(
+                        f"Grabbing from Cam{cam_id} (ExpTime={ExpTime}, Binning={Binning}, PacketSize={packet_size}, IPD={cam_ipd}, FTD_Base={cam_ftd_base})"
+                    )
+
+                    res = await self.env.controller.grabone(
+                        CamNum=cam_id,
+                        ExpTime=ExpTime,
+                        Binning=Binning,
+                        output_dir=grab_save_path,
+                        packet_size=packet_size,
+                        ipd=cam_ipd,
+                        ftd_base=cam_ftd_base,
+                    )
+                    timeout_cameras.extend(res)
+
+                msg = f"Images grabbed from all cameras with individual settings."
+                if timeout_cameras:
+                    msg += f" Timeout: {timeout_cameras}"
+                return self._generate_response("success", msg)
+
+            # List of specific cameras (all use common ipd/ftd_base here)
+            if isinstance(CamNum, list):
+                self.env.logger.info(
+                    f"Grabbing from cameras {CamNum} (ExpTime={ExpTime}, Binning={Binning}, PacketSize={packet_size}, IPD={ipd}, FTD_Base={ftd_base})"
+                )
+                for num in CamNum:
+                    res = await self.env.controller.grabone(
+                        CamNum=num,
+                        ExpTime=ExpTime,
+                        Binning=Binning,
+                        output_dir=grab_save_path,
+                        packet_size=packet_size,
+                        ipd=ipd,
+                        ftd_base=ftd_base,
+                    )
+                    timeout_cameras.extend(res)
+
                 msg = f"Images grabbed from cameras {CamNum}."
                 if timeout_cameras:
                     msg += f" Timeout: {timeout_cameras}"
                 return self._generate_response("success", msg)
 
-            else:
-                raise ValueError(f"Wrong input for CamNum: {CamNum}")
+            raise ValueError(f"Wrong input for CamNum: {CamNum}")
 
         except Exception as e:
-            self.env.logger.error(f"Error occurred: {e}")
+            self.env.logger.error(f"Error in grab(): {e}")
             return self._generate_response(
                 "error",
-                f"Error occurred: {e} (CamNum={CamNum}, ExpTime={ExpTime}, Binning={Binning})"
+                f"Error in grab(): {e} (CamNum={CamNum}, ExpTime={ExpTime}, Binning={Binning}, PacketSize={packet_size}, IPD={ipd}, FTD_Base={ftd_base})"
             )
+
+
 
     async def guiding(self, ExpTime: float = 1.0) -> Dict[str, Any]:
         base_dir = os.path.dirname(os.path.abspath(__file__))
