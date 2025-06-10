@@ -88,7 +88,7 @@ class GFAController:
         os.environ["PYLON_CAMEMU"] = f"{self.NUM_CAMERAS}"
         self.tlf = py.TlFactory.GetInstance()
 
-        self.grab_timeout = 5000
+        self.grab_timeout = 180000 # 3 minute
         self.img_class = GFAImage(logger)
         self.open_cameras = {}
 

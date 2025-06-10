@@ -111,7 +111,8 @@ class GFAActions:
         cam_ftd_base: int = 0    # default for Cam1~5
     ) -> Dict[str, Any]:
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        grab_save_path = os.path.join(base_dir, "img", "grab")
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        grab_save_path = os.path.join(base_dir, "img", "grab", date_str)
         self.env.logger.info(f"Image save path: {grab_save_path}")
 
         timeout_cameras: List[int] = []
@@ -193,16 +194,31 @@ class GFAActions:
                 f"Error in grab(): {e} (CamNum={CamNum}, ExpTime={ExpTime}, Binning={Binning}, PacketSize={packet_size}, IPD={ipd}, FTD_Base={ftd_base})"
             )
 
-
-
-    async def guiding(self, ExpTime: float = 1.0) -> Dict[str, Any]:
+    async def guiding(self, ExpTime: float = 1.0, save: bool = False) -> Dict[str, Any]:
         base_dir = os.path.dirname(os.path.abspath(__file__))
+        date_str = datetime.now().strftime("%Y-%m-%d")
+
         raw_save_path = os.path.join(base_dir, "img", "raw")
+        grab_save_path = os.path.join(base_dir, "img", "grab", date_str)
 
         try:
             self.env.logger.info("Guiding starts...")
-            # Grab if needed:
-            # await self.env.controller.grab(0, ExpTime, 4, output_dir=raw_save_path)
+
+            # Always perform grab
+            self.env.logger.info("Grabbing image from controller...")
+            os.makedirs(raw_save_path, exist_ok=True)
+            #await self.env.controller.grab(0, ExpTime, 4, output_dir=raw_save_path)
+            self.env.logger.info(f"Image saved to: {raw_save_path}")
+
+            # If save is True, also copy to grab path
+            if save:
+                os.makedirs(grab_save_path, exist_ok=True)
+                for fname in os.listdir(raw_save_path):
+                    src = os.path.join(raw_save_path, fname)
+                    dst = os.path.join(grab_save_path, fname)
+                    if os.path.isfile(src):
+                        shutil.copy2(src, dst)
+                self.env.logger.info(f"Image(s) additionally saved to: {grab_save_path}")
 
             self.env.logger.info("Astrometry preprocessing...")
             self.env.astrometry.preproc()
@@ -210,7 +226,6 @@ class GFAActions:
             self.env.logger.info("Calculating guider offsets...")
             fdx, fdy, fwhm = self.env.guider.exe_cal()
 
-            # Deleting raw and processed files
             self.env.logger.info("Clearing raw and processed files after guiding...")
             self.env.astrometry.clear_raw_and_processed_files()
 
