@@ -8,6 +8,7 @@
 import os
 import asyncio
 from typing import Union, List, Dict, Any, Optional
+from datetime import datetime
 
 from gfa_logger import GFALogger
 from gfa_controller import GFAController
@@ -52,11 +53,11 @@ class GFAEnvironment:
                  gfa_config_path: str,
                  ast_config_path: str,
                  logger,
-                 camera_count: int = 6):
+                 camera_count: int = 7):
         self.gfa_config_path = gfa_config_path
         self.ast_config_path = ast_config_path
         self.logger = logger
-        self.camera_count = camera_count
+        self.camera_count = camera_count # Cam0 포함한 전체 카메라 수
 
         # Initialize dependencies
         self.controller = GFAController(self.gfa_config_path, self.logger)
@@ -102,97 +103,46 @@ class GFAActions:
 
     async def grab(
         self,
-        CamNum: Union[int, List[int]] = 0,
+        CamNum: Union[int, List[int]] = -2,
         ExpTime: float = 1.0,
         Binning: int = 4,
         *,
         packet_size: int = 8192,
-        cam_ipd: int = 367318,         # default for Cam1~5
-        cam_ftd_base: int = 0    # default for Cam1~5
+        cam_ipd: int = 367318,
+        cam_ftd_base: int = 0
     ) -> Dict[str, Any]:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         date_str = datetime.now().strftime("%Y-%m-%d")
         grab_save_path = os.path.join(base_dir, "img", "grab", date_str)
         self.env.logger.info(f"Image save path: {grab_save_path}")
 
-        timeout_cameras: List[int] = []
-
         try:
-            # Single camera
-            if isinstance(CamNum, int) and CamNum != 0:
-                self.env.logger.info(
-                    f"Grabbing from camera {CamNum} (ExpTime={ExpTime}, Binning={Binning}, PacketSize={packet_size}, IPD={cam_ipd}, FTD_Base={cam_ftd_base})"
-                )
-                result = await self.env.controller.grabone(
-                    CamNum=CamNum,
-                    ExpTime=ExpTime,
-                    Binning=Binning,
-                    output_dir=grab_save_path,
-                    packet_size=packet_size,
-                    ipd=cam_ipd,
-                    ftd_base=cam_ftd_base,
-                )
-                timeout_cameras.extend(result)
-                msg = f"Image grabbed from camera {CamNum}."
-                if timeout_cameras:
-                    msg += f" Timeout: {timeout_cameras[0]}"
-                return self._generate_response("success", msg)
+            camera_ids = self._parse_camnum(CamNum)
+            self.env.logger.info(f"Grabbing images from cameras: {camera_ids}")
 
-            # All cameras with individual settings
-            if isinstance(CamNum, int) and CamNum == 0:
-                self.env.logger.info("Grabbing from ALL cameras with per-camera settings")
-                for cam_id in range(1, self.env.camera_count + 1):
+            # Call controller.grab() which already uses asyncio.gather()
+            timeout_cameras = await self.env.controller.grab(
+                CamNum=camera_ids,
+                ExpTime=ExpTime,
+                Binning=Binning,
+                packet_size=packet_size,
+                ipd=cam_ipd,
+                ftd_base=cam_ftd_base,
+                output_dir=grab_save_path,
+            )
 
-                    self.env.logger.info(
-                        f"Grabbing from Cam{cam_id} (ExpTime={ExpTime}, Binning={Binning}, PacketSize={packet_size}, IPD={cam_ipd}, FTD_Base={cam_ftd_base})"
-                    )
-
-                    res = await self.env.controller.grabone(
-                        CamNum=cam_id,
-                        ExpTime=ExpTime,
-                        Binning=Binning,
-                        output_dir=grab_save_path,
-                        packet_size=packet_size,
-                        ipd=cam_ipd,
-                        ftd_base=cam_ftd_base,
-                    )
-                    timeout_cameras.extend(res)
-
-                msg = f"Images grabbed from all cameras with individual settings."
-                if timeout_cameras:
-                    msg += f" Timeout: {timeout_cameras}"
-                return self._generate_response("success", msg)
-
-            # List of specific cameras (all use common ipd/ftd_base here)
-            if isinstance(CamNum, list):
-                self.env.logger.info(
-                    f"Grabbing from cameras {CamNum} (ExpTime={ExpTime}, Binning={Binning}, PacketSize={packet_size}, IPD={ipd}, FTD_Base={ftd_base})"
-                )
-                for num in CamNum:
-                    res = await self.env.controller.grabone(
-                        CamNum=num,
-                        ExpTime=ExpTime,
-                        Binning=Binning,
-                        output_dir=grab_save_path,
-                        packet_size=packet_size,
-                        ipd=cam_ipd,
-                        ftd_base=cam_ftd_base,
-                    )
-                    timeout_cameras.extend(res)
-
-                msg = f"Images grabbed from cameras {CamNum}."
-                if timeout_cameras:
-                    msg += f" Timeout: {timeout_cameras}"
-                return self._generate_response("success", msg)
-
-            raise ValueError(f"Wrong input for CamNum: {CamNum}")
+            msg = f"Images grabbed from cameras {camera_ids}."
+            if timeout_cameras:
+                msg += f" Timeout: {timeout_cameras}"
+            return self._generate_response("success", msg)
 
         except Exception as e:
             self.env.logger.error(f"Error in grab(): {e}")
             return self._generate_response(
                 "error",
-                f"Error in grab(): {e} (CamNum={CamNum}, ExpTime={ExpTime}, Binning={Binning}, PacketSize={packet_size}, IPD={ipd}, FTD_Base={ftd_base})"
+                f"Error in grab(): {e} (CamNum={CamNum}, ExpTime={ExpTime}, Binning={Binning}, PacketSize={packet_size}, IPD={cam_ipd}, FTD_Base={cam_ftd_base})"
             )
+
 
     async def guiding(self, ExpTime: float = 1.0, save: bool = False) -> Dict[str, Any]:
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -207,7 +157,7 @@ class GFAActions:
             # Always perform grab
             self.env.logger.info("Grabbing image from controller...")
             os.makedirs(raw_save_path, exist_ok=True)
-            #await self.env.controller.grab(0, ExpTime, 4, output_dir=raw_save_path)
+            #await self.env.controller.grab(-2, ExpTime, 4, output_dir=raw_save_path)
             self.env.logger.info(f"Image saved to: {raw_save_path}")
 
             # If save is True, also copy to grab path
@@ -236,50 +186,77 @@ class GFAActions:
             self.env.logger.error(f"Error during guiding: {e}")
             return self._generate_response("error", f"Error during guiding: {e}")
 
-    def status(self) -> Dict[str, Any]:
+    def status(self, CamNum: Union[int, List[int]] = -2) -> Dict[str, Any]:
         try:
-            self.env.logger.info("Checking status of all cameras.")
-            status_info = self.env.controller.status()
-            return self._generate_response("success", status_info)
+            camera_ids = self._parse_camnum(CamNum)
+            self.env.logger.info(f"Checking status for cameras: {camera_ids}")
+
+            msg_lines = []
+            for cam in camera_ids:
+                status = self.env.controller.status(cam)
+                msg_lines.append(f"Cam{cam}: {status}")
+            return self._generate_response("success", "\n".join(msg_lines))
+
         except Exception as e:
             self.env.logger.error(f"Error checking status: {e}")
             return self._generate_response("error", f"Error checking status: {e}")
 
-    def ping(self, CamNum: int = 0) -> Dict[str, Any]:
+    def ping(self, CamNum: Union[int, List[int]] = -2) -> Dict[str, Any]:
         try:
-            if CamNum == 0:
-                self.env.logger.info("Pinging all cameras.")
-                for i in range(1, self.env.camera_count + 1):
-                    self.env.controller.ping(i)
-                return self._generate_response("success", "Pinged all cameras.")
-            else:
-                self.env.logger.info(f"Pinging camera {CamNum}.")
-                self.env.controller.ping(CamNum)
-                return self._generate_response("success", f"Pinged camera {CamNum}.")
+            camera_ids = self._parse_camnum(CamNum)
+            self.env.logger.info(f"Pinging cameras: {camera_ids}")
+
+            for cam in camera_ids:
+                self.env.logger.info(f"Pinging Cam{cam}...")
+                self.env.controller.ping(cam)
+
+            return self._generate_response("success", f"Pinged cameras: {camera_ids}")
+
         except Exception as e:
             self.env.logger.error(f"Error pinging camera(s): {e}")
             return self._generate_response("error", f"Error pinging camera(s): {e}")
 
-    def cam_params(self, CamNum: int = 0) -> Dict[str, Any]:
+    def cam_params(self, CamNum: Union[int, List[int]] = -2) -> Dict[str, Any]:
         try:
-            if CamNum == 0:
-                self.env.logger.info("Retrieving parameters for all cameras.")
-                messages = []
-                for i in range(1, self.env.camera_count + 1):
-                    param = self.env.controller.cam_params(i)
-                    messages.append(f"Cam{i}: {param}")
-                return self._generate_response("success", "\n".join(messages))
-            else:
-                self.env.logger.info(f"Retrieving parameters for camera {CamNum}.")
-                param = self.env.controller.cam_params(CamNum)
-                return self._generate_response("success", f"Cam{CamNum}: {param}")
+            camera_ids = self._parse_camnum(CamNum)
+            self.env.logger.info(f"Retrieving parameters for cameras: {camera_ids}")
+
+            msg_lines = []
+            for cam in camera_ids:
+                self.env.logger.info(f"Retrieving parameters for Cam{cam}")
+                param = self.env.controller.cam_params(cam)
+                msg_lines.append(f"Cam{cam}: {param}")
+
+            return self._generate_response("success", "\n".join(msg_lines))
+
         except Exception as e:
             self.env.logger.error(f"Error retrieving parameters: {e}")
             return self._generate_response("error", f"Error retrieving parameters: {e}")
 
-    def shutdown(self):
+
+    def shutdown(self) -> None:
         """
         Call this to cleanly close cameras before exiting.
         """
         self.env.shutdown()
         self.env.logger.info("GFAActions shutdown complete.")
+
+    def _parse_camnum(self, CamNum) -> List[int]:
+        valid_ids = [0] + list(range(1, self.env.camera_count))  # Cam0~6 only
+
+        if isinstance(CamNum, int):
+            if CamNum == -2:
+                return valid_ids
+            elif CamNum == -1:
+                return valid_ids[1:]  # Only Cam1~6
+            elif CamNum in valid_ids:
+                return [CamNum]
+            else:
+                raise ValueError(f"Invalid CamNum: {CamNum}")
+        elif isinstance(CamNum, list):
+            for cam in CamNum:
+                if cam not in valid_ids:
+                    raise ValueError(f"Invalid camera ID in list: {cam}")
+            return CamNum
+        else:
+            raise TypeError("CamNum must be int or list")

@@ -161,7 +161,6 @@ class GFAController:
         # Transport layer settings
         await loop.run_in_executor(None, cam.GevSCPSPacketSize.SetValue, int(packet_size))
         await loop.run_in_executor(None, cam.GevSCPD.SetValue, int(ipd))
-        # Conditional FTD: override if provided, else use base formula
         ftd_value = int(ftd) if ftd is not None else int(ftd_base + cam_index * (packet_size + 18))
         await loop.run_in_executor(None, cam.GevSCFTD.SetValue, ftd_value)
 
@@ -175,19 +174,26 @@ class GFAController:
         try:
             result = await loop.run_in_executor(None, cam.GrabOne, self.grab_timeout)
             img = result.GetArray()
-            timestamp = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime())
-            filename = f"{timestamp}_cam_{serial_hint or 'X'}.fits"
+
+            now = datetime.now()
+            timestamp = now.strftime("%Y%m%d_%H-%M-%S")
+
+            # Prefer serial hint if provided, else use cam index
+            cam_label = serial_hint if serial_hint else f"cam{cam_index}"
+            filename = f"{timestamp}_{cam_label}_grab_bin{Binning}_exp{int(ExpTime)}s.fits"
+
             self.img_class.save_fits(
                 image_array=img,
                 filename=filename,
                 exptime=ExpTime,
-                output_directory=output_dir
+                output_directory=output_dir,
             )
             return img
 
         except genicam.TimeoutException:
-            self.logger.error(f"Timeout while grabbing image from camera {serial_hint or 'unknown'}.")
+            self.logger.error(f"Timeout while grabbing image from camera {serial_hint or 'cam'+str(cam_index)}.")
             return None
+
 
     async def grabone(
         self,

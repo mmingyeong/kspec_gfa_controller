@@ -6,6 +6,14 @@
         "Cameras": {
           "Description": "Cameras connected with an KSPEC Controller",
           "Elements": {
+            "Cam0": {
+              "Name": "GFA Camera Center",
+              "Number": 0,
+              "ModelName": "a2A5328-4gmPRO",
+              "SerialNumber": "",
+              "IpAddress": "",
+              "SubnetMask": "255.255.255.0"
+            },
             "Cam1": {
               "Name": "GFA Camera 1",
               "Number": 1,
