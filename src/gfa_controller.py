@@ -14,10 +14,12 @@ import sys
 import yaml
 import pypylon.pylon as py
 from pypylon import genicam
+from datetime import datetime, timezone
 
 from gfa_img import GFAImage
 
 __all__ = ["GFAController"]
+
 
 ###############################################################################
 # Default Config and Logger
@@ -32,6 +34,7 @@ def _get_default_config_path() -> str:
         )
     return default_path
 
+
 def _get_default_logger() -> logging.Logger:
     logger = logging.getLogger("gfa_controller_default")
     if not logger.handlers:
@@ -45,9 +48,10 @@ def _get_default_logger() -> logging.Logger:
         logger.addHandler(console_handler)
     return logger
 
+
 def from_config(config_path: str) -> dict:
     file_extension = os.path.splitext(config_path)[1].lower()
-    with open(config_path, 'r') as f:
+    with open(config_path, "r") as f:
         if file_extension in [".yml", ".yaml"]:
             data = yaml.load(f, Loader=yaml.FullLoader)
         elif file_extension == ".json":
@@ -57,6 +61,7 @@ def from_config(config_path: str) -> dict:
                 "Unsupported file format. Please use a .yml, .yaml, or .json file."
             )
     return data
+
 
 ###############################################################################
 # Main Controller Class
@@ -79,7 +84,9 @@ class GFAController:
             raise
 
         try:
-            self.cameras_info = self.config["GfaController"]["Elements"]["Cameras"]["Elements"]
+            self.cameras_info = self.config["GfaController"]["Elements"]["Cameras"][
+                "Elements"
+            ]
         except KeyError as e:
             self.logger.error(f"Configuration key error: {e}")
             raise
@@ -88,7 +95,7 @@ class GFAController:
         os.environ["PYLON_CAMEMU"] = f"{self.NUM_CAMERAS}"
         self.tlf = py.TlFactory.GetInstance()
 
-        self.grab_timeout = 180000 # 3 minute
+        self.grab_timeout = 180000  # 3 minute
         self.img_class = GFAImage(logger)
         self.open_cameras = {}
 
@@ -159,9 +166,15 @@ class GFAController:
         loop = asyncio.get_running_loop()
 
         # Transport layer settings
-        await loop.run_in_executor(None, cam.GevSCPSPacketSize.SetValue, int(packet_size))
+        await loop.run_in_executor(
+            None, cam.GevSCPSPacketSize.SetValue, int(packet_size)
+        )
         await loop.run_in_executor(None, cam.GevSCPD.SetValue, int(ipd))
-        ftd_value = int(ftd) if ftd is not None else int(ftd_base + cam_index * (packet_size + 18))
+        ftd_value = (
+            int(ftd)
+            if ftd is not None
+            else int(ftd_base + cam_index * (packet_size + 18))
+        )
         await loop.run_in_executor(None, cam.GevSCFTD.SetValue, ftd_value)
 
         # Imaging settings
@@ -175,12 +188,15 @@ class GFAController:
             result = await loop.run_in_executor(None, cam.GrabOne, self.grab_timeout)
             img = result.GetArray()
 
-            now = datetime.now()
-            timestamp = now.strftime("%Y%m%d_%H-%M-%S")
+            # Get current UTC time
+            now = datetime.now(timezone.utc)
+            date_str = now.strftime("%Y%m%d")
+            time_str = now.strftime("%H%M%S")  # e.g., 143012
+            timestamp = f"D{date_str}_T{time_str}"
 
             # Prefer serial hint if provided, else use cam index
             cam_label = serial_hint if serial_hint else f"cam{cam_index}"
-            filename = f"{timestamp}_{cam_label}_grab_bin{Binning}_exp{int(ExpTime)}s.fits"
+            filename = f"{timestamp}_{cam_label}_exp{int(ExpTime)}s.fits"
 
             self.img_class.save_fits(
                 image_array=img,
@@ -191,9 +207,10 @@ class GFAController:
             return img
 
         except genicam.TimeoutException:
-            self.logger.error(f"Timeout while grabbing image from camera {serial_hint or 'cam'+str(cam_index)}.")
+            self.logger.error(
+                f"Timeout while grabbing image from camera {serial_hint or 'cam'+str(cam_index)}."
+            )
             return None
-
 
     async def grabone(
         self,
