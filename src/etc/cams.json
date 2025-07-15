@@ -58,8 +58,8 @@
               "Name": "GFA Camera Finder",
               "Number": 7,
               "ModelName": "a2A5328-4gmPRO",
-              "SerialNumber": "",
-              "IpAddress": "",
+              "SerialNumber": "40074358",
+              "IpAddress": "192.168.88.58",
               "SubnetMask": "255.255.255.0"
             },
           }
