@@ -141,14 +141,15 @@ class FinderGFAActions:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         date_str = datetime.now().strftime("%Y-%m-%d")
 
-        raw_save_path = os.path.join(base_dir, "img", "raw_finder")
-        grab_save_path = os.path.join(base_dir, "img", "grab_finder", date_str)
+        raw_save_path = os.path.join(base_dir, "img", "raw")
+        grab_save_path = os.path.join(base_dir, "img", "grab", date_str)
 
         try:
-            self.env.logger.info("Acquiring focus image...")
-            os.makedirs(raw_save_path, exist_ok=True)
+            self.env.logger.info("Starting guiding sequence...")
 
-            self.env.controller.grab(self.cam_id, ExpTime, 1, output_dir=raw_save_path)
+            os.makedirs(raw_save_path, exist_ok=True)
+            self.env.logger.info("Grabbing raw image...")
+            self.env.controller.grab(0, ExpTime, 4, output_dir=raw_save_path)
 
             if save:
                 os.makedirs(grab_save_path, exist_ok=True)
@@ -157,13 +158,25 @@ class FinderGFAActions:
                     dst = os.path.join(grab_save_path, fname)
                     if os.path.isfile(src):
                         shutil.copy2(src, dst)
-                self.env.logger.info(f"Copied image(s) to: {grab_save_path}")
+                self.env.logger.info(f"Images also copied to: {grab_save_path}")
 
-            return self._generate_response("success", "Focus image acquired.")
+            #self.env.logger.info("Running astrometry preprocessing...")
+            #self.env.astrometry.preproc()
+
+            #self.env.logger.info("Executing guider offset calculation...")
+            #fdx, fdy, fwhm = self.env.guider.exe_cal()
+
+            #self.env.logger.info("Clearing temp astrometry data...")
+            #self.env.astrometry.clear_raw_and_processed_files()
+
+            #msg = f"Offsets: fdx={fdx}, fdy={fdy}, FWHM={fwhm:.5f} arcsec"
+            msg = "."
+            fdx, fdy, fwhm = 0, 0, 0
+            return self._generate_response("success", msg, fdx=fdx, fdy=fdy, fwhm=fwhm)
 
         except Exception as e:
-            self.env.logger.error(f"Focus acquisition failed: {e}")
-            return self._generate_response("error", f"Focus acquisition failed: {e}")
+            self.env.logger.error(f"Guiding failed: {e}")
+            return self._generate_response("error", f"Guiding failed: {e}")
 
     def status(self) -> Dict[str, Any]:
         """

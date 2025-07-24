@@ -15,6 +15,8 @@ import yaml
 import pypylon.pylon as py
 from pypylon import genicam
 from datetime import datetime, timezone
+from typing import List
+
 
 from gfa_img import GFAImage
 
@@ -148,6 +150,74 @@ class GFAController:
             else:
                 self.logger.warning(f"{cam_key} is not open.")
         return status
+
+    def cam_params(self, CamNum: int):
+        """
+        Retrieves and logs parameters of the specified camera.
+        Reuses already opened camera if available.
+
+        Parameters
+        ----------
+        CamNum : int
+            Camera number for which to retrieve parameters.
+
+        Raises
+        ------
+        KeyError
+            If the camera number is not found in the `cameras_info` dictionary.
+        """
+        self.logger.info(f"Checking parameters of camera {CamNum}")
+        key = f"Cam{CamNum}"
+
+        # 카메라 정보 확인
+        if key not in self.cameras_info:
+            self.logger.error(f"Invalid camera number {CamNum}.")
+            raise KeyError(f"{key} not found in cameras_info.")
+
+        # 이미 열려 있는 카메라 가져오기
+        camera = self.open_cameras.get(key)
+
+        # 없으면 예외적으로 새로 열기 (일반적으로는 open_all_cameras() 사용을 권장)
+        if camera is None or not camera.IsOpen():
+            self.logger.warning(f"{key} is not open — opening temporarily.")
+            ip = self.cameras_info[key]["IpAddress"]
+            dev_info = py.DeviceInfo()
+            dev_info.SetIpAddress(ip)
+            camera = py.InstantCamera(self.tlf.CreateDevice(dev_info))
+            camera.Open()
+            # 닫지 않고 유지 (close는 사용자가 결정)
+            self.open_cameras[key] = camera
+
+        # 카메라 정보 출력
+        self.logger.info("Camera Device Information")
+        self.logger.info("=========================")
+
+        info_attributes = [
+            ("DeviceModelName", "DeviceModelName"),
+            ("DeviceSerialNumber", "DeviceSerialNumber"),
+            ("DeviceUserID", "DeviceUserID"),
+            ("Width", "Width"),
+            ("Height", "Height"),
+            ("PixelFormat", "PixelFormat"),
+            ("ExposureTime (μs)", "ExposureTime"),
+            ("BinningHorizontalMode", "BinningHorizontalMode"),
+            ("BinningHorizontal", "BinningHorizontal"),
+            ("BinningVerticalMode", "BinningVerticalMode"),
+            ("BinningVertical", "BinningVertical"),
+        ]
+
+        params = {}
+        for label, attribute in info_attributes:
+            try:
+                value = getattr(camera, attribute).GetValue()
+                self.logger.info(f"{label} : {value}")
+                params[label] = value
+            except Exception as e:
+                self.logger.error(f"AccessException for {label}: {e}")
+                params[label] = None
+
+        return params
+
 
     async def configure_and_grab(
         self,
@@ -299,3 +369,49 @@ class GFAController:
                 timeout_cams.extend(r)
 
         return timeout_cams
+
+    def open_selected_cameras(self, camera_ids: List[int]):
+        for cam_id in camera_ids:
+            key = f"Cam{cam_id}"
+            if key in self.open_cameras and self.open_cameras[key].IsOpen():
+                continue
+            ip = self.cameras_info[key]["IpAddress"]
+            dev_info = py.DeviceInfo()
+            dev_info.SetIpAddress(ip)
+            cam = py.InstantCamera(self.tlf.CreateDevice(dev_info))
+            cam.Open()
+            self.open_cameras[key] = cam
+            self.logger.info(f"{key} opened.")
+
+    def open_camera(self, CamNum: int):
+        """
+        Open a single camera by its number (e.g., 1–7).
+        
+        Parameters
+        ----------
+        CamNum : int
+            The camera number to open (e.g., 1–7).
+        """
+        key = f"Cam{CamNum}"
+
+        if key in self.open_cameras and self.open_cameras[key].IsOpen():
+            self.logger.info(f"{key} is already open.")
+            return
+
+        cam_info = self.cameras_info.get(key)
+        if cam_info is None:
+            self.logger.error(f"Camera {key} not found in configuration.")
+            raise KeyError(f"{key} not found")
+
+        ip = cam_info["IpAddress"]
+        dev_info = py.DeviceInfo()
+        dev_info.SetIpAddress(ip)
+
+        try:
+            cam = py.InstantCamera(self.tlf.CreateDevice(dev_info))
+            cam.Open()
+            self.open_cameras[key] = cam
+            self.logger.info(f"{key} opened (IP {ip}).")
+        except Exception as e:
+            self.logger.error(f"Failed to open {key}: {e}")
+            raise

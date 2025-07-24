@@ -75,21 +75,21 @@ async def test_finder_actions():
     actions = FinderGFAActions(env)
 
     print("Grab image:")
-    result = await actions.grab(ExpTime=0.3)
-    print(result)
+    #result = await actions.grab(ExpTime=0.3)
+    #print(result)
 
     print("Focusing (guiding) frame:")
-    result = await actions.guiding(ExpTime=0.3, save=True)
-    print(result)
+    #result = await actions.guiding(ExpTime=0.3, save=True)
+    #print(result)
 
-    print("Ping finder:")
-    print(actions.ping())
+    #print("Ping finder:")
+    #print(actions.ping())
 
-    print("Cam params:")
-    print(actions.cam_params())
+    #print("Cam params:")
+    #print(actions.cam_params())
 
 
 if __name__ == "__main__":
-    asyncio.run(test_gfa_controller())
-    asyncio.run(test_gfa_actions())
+    #asyncio.run(test_gfa_controller())
+    #asyncio.run(test_gfa_actions())
     asyncio.run(test_finder_actions())

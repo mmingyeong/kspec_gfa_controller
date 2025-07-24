@@ -79,7 +79,11 @@ class GFAEnvironment:
         self.controller = GFAController(self.gfa_config_path, self.logger)
 
         if role == "plate":
-            self.controller.open_cameras(self.camera_ids)
+            if hasattr(self.controller, "open_selected_cameras"):
+                self.controller.open_selected_cameras(self.camera_ids)
+            else:
+                raise AttributeError("GFAController has no method 'open_selected_cameras'")
+
             self.astrometry = GFAAstrometry(self.ast_config_path, self.logger)
             self.guider = GFAGuider(self.ast_config_path, self.logger)
         elif role == "finder":
@@ -88,12 +92,13 @@ class GFAEnvironment:
             self.guider = None
 
     def shutdown(self):
-        """
-        Cleanly close only relevant cameras.
-        """
         self.logger.info(f"Shutting down environment ({self.role})")
-        for cam_id in self.camera_ids:
-            self.controller.close_camera(cam_id)
+        if self.role == "finder":
+            self.controller.close_camera(7)
+        else:
+            for cam_id in self.camera_ids:
+                self.controller.close_camera(cam_id)
+
 
 
 def create_environment(role: CameraRole = "plate") -> GFAEnvironment:
