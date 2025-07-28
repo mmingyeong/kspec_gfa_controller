@@ -47,3 +47,10 @@ GfaController:
                     SerialNumber: 40103833
                     IpAddress: 192.168.5.9
                     SubnetMask: 255.255.255.0
+                Cam7:
+                    Name: "GFA Camera 7"
+                    Number: 7
+                    ModelName: "a2A5328-4gmPRO"
+                    SerialNumber: 40074358
+                    IpAddress: 192.168.88.58
+                    SubnetMask: 255.255.255.0

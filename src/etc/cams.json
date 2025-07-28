@@ -46,20 +46,12 @@
               "IpAddress": "192.168.88.63",
               "SubnetMask": "255.255.255.0"
             },
-            "Cam6": {
-              "Name": "GFA Camera 6",
-              "Number": 6,
-              "ModelName": "a2A5328-4gmPRO",
-              "SerialNumber": "40103831",
-              "IpAddress": "192.168.88.31",
-              "SubnetMask": "255.255.255.0"
-            },
             "Cam7": {
               "Name": "GFA Camera Finder",
               "Number": 7,
               "ModelName": "a2A5328-4gmPRO",
-              "SerialNumber": "40074358",
-              "IpAddress": "192.168.88.58",
+              "SerialNumber": "40103831",
+              "IpAddress": "192.168.88.31",
               "SubnetMask": "255.255.255.0"
             }
           }
