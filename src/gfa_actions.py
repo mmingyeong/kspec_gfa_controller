@@ -124,11 +124,14 @@ class GFAActions:
 
             if isinstance(CamNum, int) and CamNum == 0:
                 self.env.logger.info("Grabbing from all plate cameras...")
+                
+                tasks = []
+
                 for cam_id in self.env.camera_ids:
                     self.env.logger.info(
                         f"Grabbing from Cam{cam_id} (ExpTime={ExpTime}, Binning={Binning})"
                     )
-                    res = await self.env.controller.grabone(
+                    task = self.env.controller.grabone(
                         CamNum=cam_id,
                         ExpTime=ExpTime,
                         Binning=Binning,
@@ -137,6 +140,14 @@ class GFAActions:
                         ipd=cam_ipd,
                         ftd_base=cam_ftd_base,
                     )
+                    tasks.append(task)
+
+                # Run all camera grabs concurrently
+                results = await asyncio.gather(*tasks)
+
+                # Combine results (e.g., timeout_cameras)
+                timeout_cameras = []
+                for res in results:
                     timeout_cameras.extend(res)
 
                 msg = "Images grabbed from all cameras."
@@ -148,9 +159,14 @@ class GFAActions:
                 self.env.logger.info(
                     f"Grabbing from cameras {CamNum} (ExpTime={ExpTime}, Binning={Binning})"
                 )
-                for num in CamNum:
-                    res = await self.env.controller.grabone(
-                        CamNum=num,
+                tasks = []
+
+                for cam_id in self.env.camera_ids:
+                    self.env.logger.info(
+                        f"Grabbing from Cam{cam_id} (ExpTime={ExpTime}, Binning={Binning})"
+                    )
+                    task = self.env.controller.grabone(
+                        CamNum=cam_id,
                         ExpTime=ExpTime,
                         Binning=Binning,
                         output_dir=grab_save_path,
@@ -158,6 +174,14 @@ class GFAActions:
                         ipd=cam_ipd,
                         ftd_base=cam_ftd_base,
                     )
+                    tasks.append(task)
+
+                # Run all camera grabs concurrently
+                results = await asyncio.gather(*tasks)
+
+                # Combine results (e.g., timeout_cameras)
+                timeout_cameras = []
+                for res in results:
                     timeout_cameras.extend(res)
 
                 msg = f"Images grabbed from cameras {CamNum}."
@@ -219,13 +243,19 @@ class GFAActions:
 
             self.env.logger.info("Clearing temp astrometry data...")
             self.env.astrometry.clear_raw_and_processed_files()
+            
+            try:
+                fwhm_val = float(fwhm)
+            except ValueError:
+                fwhm_val = 0.0  # 또는 예외 처리
 
-            msg = f"Offsets: fdx={fdx}, fdy={fdy}, FWHM={fwhm:.5f} arcsec"
-            return self._generate_response("success", msg, fdx=fdx, fdy=fdy, fwhm=fwhm)
+            msg = f"Offsets: fdx={fdx}, fdy={fdy}, FWHM={fwhm_val} arcsec"
+            return self._generate_response("success", msg, fdx=fdx, fdy=fdy, fwhm=fwhm_val)
 
         except Exception as e:
-            self.env.logger.error(f"Guiding failed: {e}")
-            return self._generate_response("error", f"Guiding failed: {e}")
+            self.env.logger.error(f"Guiding failed: {str(e)}")
+            return self._generate_response("error", f"Guiding failed: {str(e)}")
+
 
     def status(self) -> Dict[str, Any]:
         """
