@@ -50,8 +50,8 @@
               "Name": "GFA Camera 5",
               "Number": 5,
               "ModelName": "a2A5328-4gmPRO",
-              "SerialNumber": "40103663",
-              "IpAddress": "192.168.88.63",
+              "SerialNumber": "40103831",
+              "IpAddress": "192.168.88.31",
               "SubnetMask": "255.255.255.0",
               "PacketSize": "8192",
               "InterPacketDelay": "367318"
@@ -60,8 +60,8 @@
               "Name": "GFA Camera Finder",
               "Number": 7,
               "ModelName": "a2A5328-4gmPRO",
-              "SerialNumber": "40103831",
-              "IpAddress": "192.168.88.31",
+              "SerialNumber": "40103663",
+              "IpAddress": "192.168.88.63",
               "SubnetMask": "255.255.255.0",
               "PacketSize": "8192",
               "InterPacketDelay": "367318"
