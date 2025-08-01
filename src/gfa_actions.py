@@ -68,8 +68,8 @@ class GFAActions:
         ExpTime: float = 1.0,
         Binning: int = 4,
         *,
-        packet_size: int = 8192,
-        cam_ipd: int = 367318,
+        packet_size: int = None,
+        cam_ipd: int = None,
         cam_ftd_base: int = 0,
     ) -> Dict[str, Any]:
         """
@@ -84,9 +84,9 @@ class GFAActions:
         Binning : int, optional
             Binning factor.
         packet_size : int, optional
-            GigE packet size.
+            GigE packet size. If None, use cams.json per camera.
         cam_ipd : int, optional
-            Inter-packet delay.
+            Inter-packet delay. If None, use cams.json per camera.
         cam_ftd_base : int, optional
             Frame transmission delay base.
 
@@ -124,9 +124,8 @@ class GFAActions:
 
             if isinstance(CamNum, int) and CamNum == 0:
                 self.env.logger.info("Grabbing from all plate cameras...")
-                
-                tasks = []
 
+                tasks = []
                 for cam_id in self.env.camera_ids:
                     self.env.logger.info(
                         f"Grabbing from Cam{cam_id} (ExpTime={ExpTime}, Binning={Binning})"
@@ -144,8 +143,6 @@ class GFAActions:
 
                 # Run all camera grabs concurrently
                 results = await asyncio.gather(*tasks)
-
-                # Combine results (e.g., timeout_cameras)
                 timeout_cameras = []
                 for res in results:
                     timeout_cameras.extend(res)
@@ -160,8 +157,7 @@ class GFAActions:
                     f"Grabbing from cameras {CamNum} (ExpTime={ExpTime}, Binning={Binning})"
                 )
                 tasks = []
-
-                for cam_id in self.env.camera_ids:
+                for cam_id in CamNum:
                     self.env.logger.info(
                         f"Grabbing from Cam{cam_id} (ExpTime={ExpTime}, Binning={Binning})"
                     )
@@ -178,8 +174,6 @@ class GFAActions:
 
                 # Run all camera grabs concurrently
                 results = await asyncio.gather(*tasks)
-
-                # Combine results (e.g., timeout_cameras)
                 timeout_cameras = []
                 for res in results:
                     timeout_cameras.extend(res)
@@ -196,6 +190,7 @@ class GFAActions:
             return self._generate_response(
                 "error", f"Grab failed: {e} (CamNum={CamNum}, ExpTime={ExpTime})"
             )
+
 
     async def guiding(self, ExpTime: float = 1.0, save: bool = False) -> Dict[str, Any]:
         """

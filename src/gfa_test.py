@@ -74,9 +74,9 @@ async def test_finder_actions():
     env = create_environment(role="finder")
     actions = FinderGFAActions(env)
 
-    #print("Grab image:")
-    #result = await actions.grab(ExpTime=0.3)
-    #print(result)
+    print("Grab image:")
+    result = await actions.grab(ExpTime=0.3)
+    print(result)
 
     #print("Focusing (guiding) frame:")
     #result = await actions.guiding(ExpTime=0.3, save=True)
@@ -86,7 +86,7 @@ async def test_finder_actions():
     #print(actions.ping())
 
     #print("Cam params:")
-    print(actions.cam_params())
+    #print(actions.cam_params())
 
 
 if __name__ == "__main__":
