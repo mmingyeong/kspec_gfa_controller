@@ -231,8 +231,8 @@ class GFAController:
         output_dir: str = None,
         serial_hint: str = None,
         ftd: int = None,
-        ra: float = None,
-        dec: float = None
+        ra: str = None,
+        dec: str = None
     ):
         """Configure camera and grab an image."""
         loop = asyncio.get_running_loop()
@@ -296,8 +296,8 @@ class GFAController:
         ftd_base: int = 39000,
         output_dir: str = None,
         ftd: int = None,
-        ra: float = None,
-        dec: float = None
+        ra: str = None,
+        dec: str = None
     ) -> list:
         """
         Grab one image from a single camera.
@@ -382,8 +382,8 @@ class GFAController:
         ipd: int = None,
         ftd_base: int = 39000,
         output_dir: str = None,
-        ra: float = None,
-        dec: float = None
+        ra: str = None,
+        dec: str = None
     ):
         """
         Grab images from one or more cameras.
