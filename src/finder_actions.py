@@ -72,8 +72,8 @@ class FinderGFAActions:
         packet_size: int = None,
         cam_ipd: int = None,
         cam_ftd_base: int = 0,
-        ra: float = None,
-        dec: float = None
+        ra: str = None,
+        dec: str = None
     ) -> Dict[str, Any]:
         """
         Grab a single image from the finder camera and save it.
@@ -127,7 +127,7 @@ class FinderGFAActions:
             return self._generate_response("error", f"Grab failed: {e}")
 
 
-    async def guiding(self, ExpTime: float = 1.0, save: bool = False, ra: float = None, dec: float = None) -> Dict[str, Any]:
+    async def guiding(self, ExpTime: float = 1.0, save: bool = False, ra: str = None, dec: str = None) -> Dict[str, Any]:
         """
         Acquire an image for focusing. For the finder camera, this replaces guiding.
 
