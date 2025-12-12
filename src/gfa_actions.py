@@ -72,8 +72,8 @@ class GFAActions:
         packet_size: int = None,
         cam_ipd: int = None,
         cam_ftd_base: int = 0,
-        ra: float = None,
-        dec: float = None
+        ra: str = None,
+        dec: str = None
     ) -> Dict[str, Any]:
         """
         Grab images from one or more plate cameras.
@@ -201,7 +201,7 @@ class GFAActions:
             )
 
 
-    async def guiding(self, ExpTime: float = 1.0, save: bool = False, ra: float = None, dec: float = None) -> Dict[str, Any]:
+    async def guiding(self, ExpTime: float = 1.0, save: bool = False, ra: str = None, dec: str = None) -> Dict[str, Any]:
         """
         Execute guiding procedure using all plate cameras.
 
@@ -262,8 +262,8 @@ class GFAActions:
 
     async def pointing(
         self,
-        ra: float,
-        dec: float,
+        ra: str,
+        dec: str,
         ExpTime: float = 1.0,
         Binning: int = 4,
         CamNum: int = 0,
@@ -280,7 +280,7 @@ class GFAActions:
 
         Parameters
         ----------
-        ra, dec : float
+        ra, dec : str
             Requested reference pointing coordinates (passed to grab and written in header).
         ExpTime : float
             Exposure time.
