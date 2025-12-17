@@ -2,39 +2,35 @@ name: Ruff Lint
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: "3.x"
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install ruff
+          python -m pip install -U pip
+          python -m pip install ruff
+
       - name: Run Ruff
-        run: |
-          ruff check .
-    
+        run: ruff check .
+
       - name: Generate Badge
         run: |
-          if [ $? -eq 0 ]; then
-            echo "![Ruff](https://img.shields.io/badge/Ruff-passing-brightgreen)" > badge-ruff-status.md
-          else
-            echo "![Ruff](https://img.shields.io/badge/Ruff-failing-red)" > badge-ruff-status.md
-          fi
+          echo "![Ruff](https://img.shields.io/badge/Ruff-passing-brightgreen)" > badge-ruff-status.md
+
       - name: Upload Badge
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ruff-badge
           path: badge-ruff-status.md
-        
