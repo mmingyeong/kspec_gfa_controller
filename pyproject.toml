@@ -4,6 +4,7 @@ version = "0.6.0"
 description = "The Controller software for KSPEC-GFA Camera"
 authors = ["Mingyeong Yang <mmingyeong@kasi.re.kr>"]
 readme = "README.md"
+packages = [{ include = "kspec_gfa_controller", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.10"
