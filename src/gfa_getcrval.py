@@ -17,14 +17,10 @@ import shutil
 import tempfile
 import subprocess
 import logging
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, List
 from pathlib import Path
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Tuple, Union, Optional
-from pathlib import Path
-import math
-
 from astropy.io import fits
 
 # Optional reuse from gfa_astrometry.py (config path / logger)

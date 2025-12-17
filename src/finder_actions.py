@@ -147,7 +147,7 @@ class FinderGFAActions:
         date_str = datetime.now().strftime("%Y-%m-%d")
 
         raw_save_path = os.path.join(base_dir, "img", "raw")
-        grab_save_path = os.path.join(base_dir, "img", "grab", date_str)
+        grab_save_path = os.path.join(base_dir, "img", "grab_finder", date_str)
 
         try:
             self.env.logger.info("Starting guiding sequence...")
