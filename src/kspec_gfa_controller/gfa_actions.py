@@ -73,7 +73,7 @@ class GFAActions:
         cam_ipd: int = None,
         cam_ftd_base: int = 0,
         ra: str = None,
-        dec: str = None
+        dec: str = None,
     ) -> Dict[str, Any]:
         """
         Grab images from one or more plate cameras.
@@ -119,7 +119,7 @@ class GFAActions:
                     ipd=cam_ipd,
                     ftd_base=cam_ftd_base,
                     ra=ra,
-                    dec=dec
+                    dec=dec,
                 )
                 timeout_cameras.extend(result)
                 msg = f"Image grabbed from camera {CamNum}."
@@ -144,7 +144,7 @@ class GFAActions:
                         ipd=cam_ipd,
                         ftd_base=cam_ftd_base,
                         ra=ra,
-                        dec=dec
+                        dec=dec,
                     )
                     tasks.append(task)
 
@@ -177,7 +177,7 @@ class GFAActions:
                         ipd=cam_ipd,
                         ftd_base=cam_ftd_base,
                         ra=ra,
-                        dec=dec
+                        dec=dec,
                     )
                     tasks.append(task)
 
@@ -200,8 +200,9 @@ class GFAActions:
                 "error", f"Grab failed: {e} (CamNum={CamNum}, ExpTime={ExpTime})"
             )
 
-
-    async def guiding(self, ExpTime: float = 1.0, save: bool = False, ra: str = None, dec: str = None) -> Dict[str, Any]:
+    async def guiding(
+        self, ExpTime: float = 1.0, save: bool = False, ra: str = None, dec: str = None
+    ) -> Dict[str, Any]:
         """
         Execute guiding procedure using all plate cameras.
 
@@ -228,7 +229,9 @@ class GFAActions:
 
             os.makedirs(raw_save_path, exist_ok=True)
             self.env.logger.info("Grabbing raw image...")
-            self.env.controller.grab(0, ExpTime, 4, output_dir=raw_save_path, ra=ra, dec=dec)
+            self.env.controller.grab(
+                0, ExpTime, 4, output_dir=raw_save_path, ra=ra, dec=dec
+            )
 
             if save:
                 os.makedirs(grab_save_path, exist_ok=True)
@@ -247,14 +250,16 @@ class GFAActions:
 
             self.env.logger.info("Clearing temp astrometry data...")
             self.env.astrometry.clear_raw_and_processed_files()
-            
+
             try:
                 fwhm_val = float(fwhm)
             except ValueError:
                 fwhm_val = 0.0  # 또는 예외 처리
 
             msg = f"Offsets: fdx={fdx}, fdy={fdy}, FWHM={fwhm_val} arcsec"
-            return self._generate_response("success", msg, fdx=fdx, fdy=fdy, fwhm=fwhm_val)
+            return self._generate_response(
+                "success", msg, fdx=fdx, fdy=fdy, fwhm=fwhm_val
+            )
 
         except Exception as e:
             self.env.logger.error(f"Guiding failed: {str(e)}")
@@ -324,8 +329,12 @@ class GFAActions:
 
             # 1) Grab images -> pointing_raw 저장
             # guiding()에서처럼 controller.grab을 사용 (동기 함수인 경우가 많음)
-            self.env.logger.info(f"Grabbing pointing images (CamNum={CamNum}, ExpTime={ExpTime}, Binning={Binning})...")
-            self.env.controller.grab(CamNum, ExpTime, Binning, output_dir=pointing_raw_path, ra=ra, dec=dec)
+            self.env.logger.info(
+                f"Grabbing pointing images (CamNum={CamNum}, ExpTime={ExpTime}, Binning={Binning})..."
+            )
+            self.env.controller.grab(
+                CamNum, ExpTime, Binning, output_dir=pointing_raw_path, ra=ra, dec=dec
+            )
 
             # 2) 디렉토리의 FITS 이미지 목록 읽기
             images = []
@@ -336,12 +345,16 @@ class GFAActions:
             if not images:
                 msg = f"No FITS images found in {pointing_raw_path}"
                 self.env.logger.error(msg)
-                return self._generate_response("error", msg, images=[], crval1=[], crval2=[])
+                return self._generate_response(
+                    "error", msg, images=[], crval1=[], crval2=[]
+                )
 
             self.env.logger.info(f"Found {len(images)} images for pointing.")
 
             # 3) CRVAL 계산 (병렬 가능)
-            self.env.logger.info(f"Solving astrometry for CRVALs (max_workers={max_workers})...")
+            self.env.logger.info(
+                f"Solving astrometry for CRVALs (max_workers={max_workers})..."
+            )
             crval1_list, crval2_list = get_crvals_from_images(
                 images,
                 max_workers=max_workers,
@@ -362,7 +375,6 @@ class GFAActions:
         except Exception as e:
             self.env.logger.error(f"Pointing failed: {str(e)}")
             return self._generate_response("error", f"Pointing failed: {str(e)}")
-
 
     def status(self) -> Dict[str, Any]:
         """

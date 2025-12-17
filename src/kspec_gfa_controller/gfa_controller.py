@@ -218,7 +218,6 @@ class GFAController:
 
         return params
 
-
     async def configure_and_grab(
         self,
         cam,
@@ -232,7 +231,7 @@ class GFAController:
         serial_hint: str = None,
         ftd: int = None,
         ra: str = None,
-        dec: str = None
+        dec: str = None,
     ):
         """Configure camera and grab an image."""
         loop = asyncio.get_running_loop()
@@ -276,13 +275,13 @@ class GFAController:
                 exptime=ExpTime,
                 output_directory=output_dir,
                 ra=ra,
-                dec=dec
+                dec=dec,
             )
             return img
 
         except genicam.TimeoutException:
             self.logger.error(
-                f"Timeout while grabbing image from camera {serial_hint or 'cam'+str(cam_index)}."
+                f"Timeout while grabbing image from camera {serial_hint or 'cam' + str(cam_index)}."
             )
             return None
 
@@ -297,7 +296,7 @@ class GFAController:
         output_dir: str = None,
         ftd: int = None,
         ra: str = None,
-        dec: str = None
+        dec: str = None,
     ) -> list:
         """
         Grab one image from a single camera.
@@ -357,7 +356,7 @@ class GFAController:
                 serial_hint=serial,
                 ftd=ftd,
                 ra=ra,
-                dec=dec
+                dec=dec,
             )
 
             if img is None:
@@ -383,7 +382,7 @@ class GFAController:
         ftd_base: int = 39000,
         output_dir: str = None,
         ra: str = None,
-        dec: str = None
+        dec: str = None,
     ):
         """
         Grab images from one or more cameras.
@@ -431,7 +430,7 @@ class GFAController:
                 ftd_base=ftd_base,
                 output_dir=output_dir,
                 ra=ra,
-                dec=dec
+                dec=dec,
             )
             for cam_num in cam_list
         ]
@@ -448,14 +447,17 @@ class GFAController:
         key = f"Cam{CamNum}"
         value = self.cameras_info.get(key, {}).get(param_name)
         if value is None:
-            self.logger.warning(f"{param_name} for {key} not found in config, using default.")
+            self.logger.warning(
+                f"{param_name} for {key} not found in config, using default."
+            )
             return None
         try:
             return int(value)
         except Exception:
-            self.logger.warning(f"{param_name} value for {key} is not an integer: {value}")
+            self.logger.warning(
+                f"{param_name} value for {key} is not an integer: {value}"
+            )
             return None
-
 
     def open_selected_cameras(self, camera_ids: List[int]):
         for cam_id in camera_ids:
@@ -473,7 +475,7 @@ class GFAController:
     def open_camera(self, CamNum: int):
         """
         Open a single camera by its number (e.g., 1–7).
-        
+
         Parameters
         ----------
         CamNum : int

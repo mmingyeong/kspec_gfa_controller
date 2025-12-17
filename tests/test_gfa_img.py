@@ -1,6 +1,7 @@
 # tests/test_gfa_img.py
 import logging
 import os
+from datetime import datetime
 
 import numpy as np
 import pytest
@@ -11,7 +12,6 @@ from gfa_img import GFAImage
 
 @pytest.fixture
 def logger():
-    # 테스트용 로거 (caplog로 메시지 잡기 쉬움)
     lg = logging.getLogger("test_gfa_img")
     lg.setLevel(logging.DEBUG)
     return lg
@@ -23,10 +23,9 @@ def test_save_fits_writes_file_and_header(tmp_path, logger, caplog):
     img = GFAImage(logger=logger)
     arr = np.arange(12, dtype=np.float32).reshape(3, 4)
 
-    # date/time을 고정값으로 넣어 flaky 방지
     img.save_fits(
         image_array=arr,
-        filename="test_image",  # .fits 자동 추가되는지 확인
+        filename="test_image",  # .fits 자동 추가
         exptime=1.23,
         telescope="KMTNET",
         instrument="KSPEC-GFA",
@@ -34,8 +33,8 @@ def test_save_fits_writes_file_and_header(tmp_path, logger, caplog):
         object_name="M42",
         date_obs="2025-12-17",
         time_obs="12:34:56",
-        ra=None,   # UNKNOWN 기본값 확인
-        dec=None,  # UNKNOWN 기본값 확인
+        ra=None,  # UNKNOWN 기본값
+        dec=None,  # UNKNOWN 기본값
         output_directory=str(tmp_path),
     )
 
@@ -63,7 +62,7 @@ def test_save_fits_writes_file_and_header(tmp_path, logger, caplog):
     assert hdr["DEC"] == "UNKNOWN"
     assert hdr["EXPTIME"] == 1.23
 
-    # 저장 로그가 남는지(너무 빡세게 문자열 매칭할 필요는 없지만 간단히)
+    # 저장 성공 로그 확인
     assert any("successfully saved" in r.message.lower() for r in caplog.records)
 
 
@@ -73,14 +72,13 @@ def test_save_fits_replaces_colon_in_filename(tmp_path, logger):
 
     img.save_fits(
         image_array=arr,
-        filename="2025-12-17T12:34:56",  # ':' → '-' 치환 확인
+        filename="2025-12-17T12:34:56",  # ':' -> '-'
         exptime=0.5,
         date_obs="2025-12-17",
         time_obs="12:34:56",
         output_directory=str(tmp_path),
     )
 
-    # ":"가 "-"로 바뀌고 .fits가 붙어야 함
     out = tmp_path / "2025-12-17T12-34-56.fits"
     assert out.exists()
 
@@ -105,8 +103,23 @@ def test_save_fits_creates_output_directory(tmp_path, logger):
     assert (outdir / "abc.fits").exists()
 
 
-def test_save_fits_logs_warning_when_date_or_time_missing(tmp_path, logger, caplog):
+def test_save_fits_logs_warning_when_date_or_time_missing(
+    tmp_path, logger, caplog, monkeypatch
+):
+    """
+    date_obs/time_obs=None이면 warning 2개 찍히는 분기 타기.
+    datetime.now()는 고정해서 flaky 방지.
+    """
     caplog.set_level(logging.WARNING)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2025, 12, 17, 12, 34, 56)
+
+    # gfa_img 모듈 내부에서 "from datetime import datetime"로 import했으므로
+    # gfa_img.datetime을 바꿔야 함
+    monkeypatch.setattr("gfa_img.datetime", FixedDatetime)
 
     img = GFAImage(logger=logger)
     arr = np.zeros((1, 1), dtype=np.float32)
@@ -115,23 +128,85 @@ def test_save_fits_logs_warning_when_date_or_time_missing(tmp_path, logger, capl
         image_array=arr,
         filename="warn_case",
         exptime=1.0,
-        # date_obs/time_obs 일부러 None
+        date_obs=None,
+        time_obs=None,
         output_directory=str(tmp_path),
     )
 
-    # 경고 2개가 찍히는지 확인(문구는 변경될 수 있으니 핵심만 체크)
-    messages = [r.message for r in caplog.records]
-    assert any("no date_obs provided" in m.lower() for m in messages)
-    assert any("no time_obs provided" in m.lower() for m in messages)
+    msgs = [r.message.lower() for r in caplog.records]
+    assert any("no date_obs provided" in m for m in msgs)
+    assert any("no time_obs provided" in m for m in msgs)
+
+    # 고정된 now() 값이 실제로 헤더에 들어갔는지까지 확인
+    out = tmp_path / "warn_case.fits"
+    with fits.open(out) as hdul:
+        hdr = hdul[0].header
+    assert hdr["DATE-OBS"] == "2025-12-17"
+    assert hdr["TIME-OBS"] == "12:34:56"
 
 
-def test_save_fits_raises_when_cannot_create_directory(tmp_path, logger, monkeypatch):
+def test_save_fits_uses_cwd_when_output_directory_none(tmp_path, logger, monkeypatch):
+    """
+    output_directory=None -> os.getcwd() 쓰는 분기 타기.
+    """
     img = GFAImage(logger=logger)
     arr = np.zeros((2, 2), dtype=np.float32)
 
-    bad_dir = tmp_path / "cannot_make"
+    monkeypatch.setattr(os, "getcwd", lambda: str(tmp_path))
 
-    # os.path.exists가 False일 때 os.makedirs가 실패하도록 강제
+    img.save_fits(
+        image_array=arr,
+        filename="cwd_case",
+        exptime=1.0,
+        date_obs="2025-12-17",
+        time_obs="00:00:00",
+        output_directory=None,
+    )
+
+    assert (tmp_path / "cwd_case.fits").exists()
+
+
+def test_save_fits_does_not_call_makedirs_if_dir_exists(tmp_path, logger, monkeypatch):
+    """
+    output_directory가 이미 존재하면 os.makedirs 분기 안 타야 함.
+    """
+    img = GFAImage(logger=logger)
+    arr = np.zeros((2, 2), dtype=np.float32)
+
+    called = {"n": 0}
+
+    def _boom(*args, **kwargs):
+        called["n"] += 1
+        raise AssertionError("os.makedirs should not be called when dir exists")
+
+    monkeypatch.setattr(os, "makedirs", _boom)
+
+    img.save_fits(
+        image_array=arr,
+        filename="exists_dir",
+        exptime=1.0,
+        date_obs="2025-12-17",
+        time_obs="00:00:00",
+        output_directory=str(tmp_path),  # 이미 존재
+    )
+
+    assert called["n"] == 0
+    assert (tmp_path / "exists_dir.fits").exists()
+
+
+def test_save_fits_raises_when_cannot_create_directory(
+    tmp_path, logger, monkeypatch, caplog
+):
+    """
+    output_directory가 없고 os.makedirs가 실패하는 에러 분기 타기.
+    """
+    caplog.set_level(logging.ERROR)
+
+    img = GFAImage(logger=logger)
+    arr = np.zeros((2, 2), dtype=np.float32)
+    bad_dir = tmp_path / "cannot_make"
+    assert not bad_dir.exists()
+
     def _raise(*args, **kwargs):
         raise OSError("no permission")
 
@@ -144,3 +219,25 @@ def test_save_fits_raises_when_cannot_create_directory(tmp_path, logger, monkeyp
             exptime=1.0,
             output_directory=str(bad_dir),
         )
+
+    # 에러 로그도 남는지 확인
+    assert any("error creating directory" in r.message.lower() for r in caplog.records)
+
+
+def test_save_fits_when_filename_already_has_extension(tmp_path, logger):
+    """
+    filename이 이미 .fits면 중복으로 .fits 안 붙는지.
+    """
+    img = GFAImage(logger=logger)
+    arr = np.zeros((1, 2), dtype=np.float32)
+
+    img.save_fits(
+        image_array=arr,
+        filename="already.fits",
+        exptime=1.0,
+        date_obs="2025-12-17",
+        time_obs="00:00:00",
+        output_directory=str(tmp_path),
+    )
+
+    assert (tmp_path / "already.fits").exists()

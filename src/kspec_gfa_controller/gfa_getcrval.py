@@ -129,7 +129,9 @@ def get_crval_from_image(
     # Ensure solve-field exists
     solve_field_path = shutil.which("solve-field")
     if not solve_field_path:
-        raise FileNotFoundError("solve-field not found! Please install astrometry.net and ensure it is in PATH.")
+        raise FileNotFoundError(
+            "solve-field not found! Please install astrometry.net and ensure it is in PATH."
+        )
 
     # Load config for astrometry parameters
     inpar = _load_config(config)
@@ -249,7 +251,7 @@ def get_crvals_from_images(
             p,
             config=config,
             logger=lg,
-            work_dir=None,          # 각 작업이 자체 tempdir 사용
+            work_dir=None,  # 각 작업이 자체 tempdir 사용
             keep_work_dir=keep_work_dir,
         )
         return i, c1, c2

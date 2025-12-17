@@ -47,12 +47,16 @@ def test_creates_stream_and_file_handlers(tmp_path):
     g = GFALogger(file="dummy.py", log_dir=str(tmp_path))
 
     # StreamHandler 1개, FileHandler 1개가 붙었는지 확인
-    stream_handlers = [h for h in g.logger.handlers if isinstance(h, logging.StreamHandler)]
+    stream_handlers = [
+        h for h in g.logger.handlers if isinstance(h, logging.StreamHandler)
+    ]
     file_handlers = [h for h in g.logger.handlers if isinstance(h, logging.FileHandler)]
 
     # FileHandler는 StreamHandler의 subclass가 아니므로 안전하게 따로 체크 가능
     assert len(file_handlers) == 1
-    assert len(stream_handlers) >= 1  # FileHandler는 StreamHandler가 아니라서 보통 1개가 됨
+    assert (
+        len(stream_handlers) >= 1
+    )  # FileHandler는 StreamHandler가 아니라서 보통 1개가 됨
 
 
 def test_prevents_duplicate_handlers_on_same_logger(tmp_path):
@@ -69,7 +73,9 @@ def test_prevents_duplicate_handlers_on_same_logger(tmp_path):
 def test_stream_level_is_applied(tmp_path):
     g = GFALogger(file="dummy.py", log_dir=str(tmp_path), stream_level=logging.WARNING)
 
-    stream_handlers = [h for h in g.logger.handlers if isinstance(h, logging.StreamHandler)]
+    stream_handlers = [
+        h for h in g.logger.handlers if isinstance(h, logging.StreamHandler)
+    ]
     # 보통 stream handler 1개
     assert len(stream_handlers) >= 1
     assert stream_handlers[0].level == logging.WARNING

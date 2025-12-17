@@ -82,7 +82,9 @@ class GFAEnvironment:
             if hasattr(self.controller, "open_selected_cameras"):
                 self.controller.open_selected_cameras(self.camera_ids)
             else:
-                raise AttributeError("GFAController has no method 'open_selected_cameras'")
+                raise AttributeError(
+                    "GFAController has no method 'open_selected_cameras'"
+                )
 
             self.astrometry = GFAAstrometry(self.ast_config_path, self.logger)
             self.guider = GFAGuider(self.ast_config_path, self.logger)
@@ -98,7 +100,6 @@ class GFAEnvironment:
         else:
             for cam_id in self.camera_ids:
                 self.controller.close_camera(cam_id)
-
 
 
 def create_environment(role: CameraRole = "plate") -> GFAEnvironment:

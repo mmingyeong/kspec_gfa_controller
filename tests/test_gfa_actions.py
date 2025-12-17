@@ -1,8 +1,5 @@
 # tests/test_gfa_actions.py
-import asyncio
 import os
-from pathlib import Path
-
 import pytest
 
 
@@ -13,10 +10,17 @@ class FakeLogger:
     def __init__(self):
         self.logs = []
 
-    def info(self, m): self.logs.append(("info", str(m)))
-    def debug(self, m): self.logs.append(("debug", str(m)))
-    def warning(self, m): self.logs.append(("warning", str(m)))
-    def error(self, m): self.logs.append(("error", str(m)))
+    def info(self, m):
+        self.logs.append(("info", str(m)))
+
+    def debug(self, m):
+        self.logs.append(("debug", str(m)))
+
+    def warning(self, m):
+        self.logs.append(("warning", str(m)))
+
+    def error(self, m):
+        self.logs.append(("error", str(m)))
 
 
 class FakeController:
@@ -71,7 +75,9 @@ class FakeGuider:
 
 
 class FakeEnv:
-    def __init__(self, camera_ids=(1, 2, 3), controller=None, astrometry=None, guider=None):
+    def __init__(
+        self, camera_ids=(1, 2, 3), controller=None, astrometry=None, guider=None
+    ):
         self.logger = FakeLogger()
         self.camera_ids = list(camera_ids)
         self.controller = controller if controller is not None else FakeController()
@@ -84,10 +90,29 @@ class FakeEnv:
 
 
 @pytest.fixture
-def actions(monkeypatch):
-    # gfa_actions import (top-level)
+def actions():
     from gfa_actions import GFAActions
+
     return GFAActions(env=FakeEnv())
+
+
+# -------------------------
+# __init__: env None branch
+# -------------------------
+def test_init_env_none_uses_create_environment(monkeypatch):
+    import gfa_actions as ga
+
+    calls = []
+
+    def fake_create_environment(*, role):
+        calls.append(role)
+        return FakeEnv()
+
+    monkeypatch.setattr(ga, "create_environment", fake_create_environment)
+
+    act = ga.GFAActions(env=None)
+    assert isinstance(act.env, FakeEnv)
+    assert calls == ["plate"]
 
 
 # -------------------------
@@ -105,16 +130,22 @@ def test_generate_response(actions):
 # grab(): CamNum=int (single)
 # -------------------------
 @pytest.mark.asyncio
-async def test_grab_single_camera_success_message(actions, tmp_path, monkeypatch):
-    # 고정 경로로 만들기 위해 __file__ 기반 base_dir을 쓰는 코드라서,
-    # mkdir 호출이 없어도 동작하게 controller.grabone만 확인하면 됨.
+async def test_grab_single_camera_success_message(actions):
     actions.env.controller._grabone_result = []  # timeout 없음
 
-    r = await actions.grab(CamNum=2, ExpTime=1.5, Binning=4, packet_size=1500, cam_ipd=10, cam_ftd_base=123, ra="1", dec="2")
+    r = await actions.grab(
+        CamNum=2,
+        ExpTime=1.5,
+        Binning=4,
+        packet_size=1500,
+        cam_ipd=10,
+        cam_ftd_base=123,
+        ra="1",
+        dec="2",
+    )
     assert r["status"] == "success"
     assert "camera 2" in r["message"].lower()
 
-    # grabone 호출 파라미터 확인
     assert len(actions.env.controller.grabone_calls) == 1
     kwargs = actions.env.controller.grabone_calls[0]
     assert kwargs["CamNum"] == 2
@@ -130,8 +161,7 @@ async def test_grab_single_camera_success_message(actions, tmp_path, monkeypatch
 
 @pytest.mark.asyncio
 async def test_grab_single_camera_timeout_in_message(actions):
-    actions.env.controller._grabone_result = [2]  # timeout cam 2
-
+    actions.env.controller._grabone_result = [2]
     r = await actions.grab(CamNum=2)
     assert r["status"] == "success"
     assert "timeout" in r["message"].lower()
@@ -141,9 +171,7 @@ async def test_grab_single_camera_timeout_in_message(actions):
 # grab(): CamNum=0 (all)
 # -------------------------
 @pytest.mark.asyncio
-async def test_grab_all_cameras_aggregates_timeouts(actions, monkeypatch):
-    # camera_ids= [1,2,3], 각 grabone이 timeout 반환하도록 순서대로 다르게 주고 싶으면
-    # grabone을 monkeypatch로 교체
+async def test_grab_all_cameras_aggregates_timeouts(actions):
     async def fake_grabone(**kwargs):
         cam = kwargs["CamNum"]
         return [cam] if cam in (1, 3) else []
@@ -162,7 +190,7 @@ async def test_grab_all_cameras_aggregates_timeouts(actions, monkeypatch):
 # grab(): CamNum=list
 # -------------------------
 @pytest.mark.asyncio
-async def test_grab_camera_list(actions, monkeypatch):
+async def test_grab_camera_list(actions):
     async def fake_grabone(**kwargs):
         return [kwargs["CamNum"]] if kwargs["CamNum"] == 5 else []
 
@@ -186,11 +214,10 @@ async def test_grab_invalid_camnum_returns_error(actions):
 # guiding(): success path (save=False)
 # -------------------------
 @pytest.mark.asyncio
-async def test_guiding_success_no_save(actions, monkeypatch, tmp_path):
-    # os.makedirs / os.listdir / shutil.copy2 등 파일 I/O를 최소화
+async def test_guiding_success_no_save(actions, monkeypatch):
     monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
     monkeypatch.setattr("gfa_actions.os.listdir", lambda p: [])
-    # controller.grab은 동기 호출
+
     actions.env.controller.grab_calls.clear()
 
     r = await actions.guiding(ExpTime=2.0, save=False, ra="1", dec="2")
@@ -198,7 +225,6 @@ async def test_guiding_success_no_save(actions, monkeypatch, tmp_path):
     assert "Offsets:" in r["message"]
     assert "fdx" in r and "fdy" in r and "fwhm" in r
 
-    # grab 호출 확인 (CamNum=0)
     assert len(actions.env.controller.grab_calls) == 1
     camnum, exptime, binning, kwargs = actions.env.controller.grab_calls[0]
     assert camnum == 0
@@ -213,10 +239,39 @@ async def test_guiding_success_no_save(actions, monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_guiding_fwhm_nonfloat_becomes_zero(actions, monkeypatch):
-    # guider가 문자열 fwhm 반환 -> 0.0으로 변환되는지
-    actions.env.guider = FakeGuider(fdx=1.0, fdy=2.0, fwhm="bad")  # type: ignore
+async def test_guiding_success_with_save_and_copy(actions, monkeypatch):
+    # save=True 분기 + isfile True/False 분기 커버 + Windows 경로 안전
+    monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
+    monkeypatch.setattr("gfa_actions.os.listdir", lambda p: ["a.fits", "not_a_file"])
 
+    monkeypatch.setattr(
+        "gfa_actions.os.path.isfile", lambda p: str(p).endswith("a.fits")
+    )
+
+    copy_calls = []
+
+    def fake_copy2(src, dst):
+        copy_calls.append((src, dst))
+
+    monkeypatch.setattr("gfa_actions.shutil.copy2", fake_copy2)
+
+    r = await actions.guiding(ExpTime=1.5, save=True, ra="3", dec="4")
+    assert r["status"] == "success"
+
+    # a.fits만 복사됨
+    assert len(copy_calls) == 1
+    src, dst = copy_calls[0]
+    src_norm = os.path.normpath(src)
+    dst_norm = os.path.normpath(dst)
+
+    assert src_norm.endswith(os.path.normpath(os.path.join("img", "raw", "a.fits")))
+    assert os.path.normpath(os.path.join("img", "grab")) in dst_norm
+    assert dst_norm.endswith(os.path.normpath("a.fits"))
+
+
+@pytest.mark.asyncio
+async def test_guiding_fwhm_nonfloat_becomes_zero(actions, monkeypatch):
+    actions.env.guider = FakeGuider(fdx=1.0, fdy=2.0, fwhm="bad")  # type: ignore
     monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
     monkeypatch.setattr("gfa_actions.os.listdir", lambda p: [])
 
@@ -231,7 +286,6 @@ async def test_guiding_exception_returns_error(actions, monkeypatch):
         raise RuntimeError("preproc failed")
 
     actions.env.astrometry.preproc = boom  # type: ignore
-
     monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
     monkeypatch.setattr("gfa_actions.os.listdir", lambda p: [])
 
@@ -241,31 +295,37 @@ async def test_guiding_exception_returns_error(actions, monkeypatch):
 
 
 # -------------------------
-# pointing(): success + no images
+# pointing(): success + no images + exception
 # -------------------------
 @pytest.mark.asyncio
-async def test_pointing_success(actions, monkeypatch, tmp_path):
-    # base_dir/img/pointing_raw/date 디렉토리 작업이 있으니 os.*를 mock
+async def test_pointing_success(actions, monkeypatch):
     monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
-
-    # clear_dir True에서 os.listdir 호출 → 기존 파일 없다고 가정
-    monkeypatch.setattr("gfa_actions.os.listdir", lambda p: ["a.fits", "b.fit", "c.txt"])
+    monkeypatch.setattr(
+        "gfa_actions.os.listdir", lambda p: ["a.fits", "b.fit", "c.txt"]
+    )
     monkeypatch.setattr("gfa_actions.os.path.isfile", lambda p: True)
     monkeypatch.setattr("gfa_actions.os.remove", lambda p: None)
 
-    # controller.grab 호출 확인만
     actions.env.controller.grab_calls.clear()
 
-    # get_crvals_from_images mock
-    monkeypatch.setattr("gfa_actions.get_crvals_from_images", lambda images, max_workers: ([1.0]*len(images), [2.0]*len(images)))
+    monkeypatch.setattr(
+        "gfa_actions.get_crvals_from_images",
+        lambda images, max_workers: ([1.0] * len(images), [2.0] * len(images)),
+    )
 
-    r = await actions.pointing(ra="1", dec="2", CamNum=0, save_by_date=False, clear_dir=True, max_workers=3)
+    r = await actions.pointing(
+        ra="1",
+        dec="2",
+        CamNum=0,
+        save_by_date=False,
+        clear_dir=True,
+        max_workers=3,
+    )
     assert r["status"] == "success"
-    assert len(r["images"]) == 2  # a.fits, b.fit만
+    assert len(r["images"]) == 2  # a.fits, b.fit
     assert r["crval1"] == [1.0, 1.0]
     assert r["crval2"] == [2.0, 2.0]
 
-    # grab이 호출되었는지
     assert len(actions.env.controller.grab_calls) == 1
     camnum, exptime, binning, kwargs = actions.env.controller.grab_calls[0]
     assert camnum == 0
@@ -276,7 +336,7 @@ async def test_pointing_success(actions, monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_pointing_no_images_returns_error(actions, monkeypatch):
     monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
-    monkeypatch.setattr("gfa_actions.os.listdir", lambda p: ["note.txt"])  # fits 없음
+    monkeypatch.setattr("gfa_actions.os.listdir", lambda p: ["note.txt"])
     monkeypatch.setattr("gfa_actions.os.path.isfile", lambda p: True)
     monkeypatch.setattr("gfa_actions.os.remove", lambda p: None)
 
@@ -287,8 +347,27 @@ async def test_pointing_no_images_returns_error(actions, monkeypatch):
     assert r["crval2"] == []
 
 
+@pytest.mark.asyncio
+async def test_pointing_exception_returns_error(actions, monkeypatch):
+    # get_crvals_from_images에서 예외 -> pointing except 분기 커버
+    monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
+    monkeypatch.setattr("gfa_actions.os.listdir", lambda p: ["a.fits"])
+    monkeypatch.setattr("gfa_actions.os.path.isfile", lambda p: True)
+    monkeypatch.setattr("gfa_actions.os.remove", lambda p: None)
+
+    def boom(images, max_workers):
+        raise RuntimeError("solve failed")
+
+    monkeypatch.setattr("gfa_actions.get_crvals_from_images", boom)
+
+    r = await actions.pointing(ra="1", dec="2", save_by_date=False, clear_dir=False)
+    assert r["status"] == "error"
+    assert "pointing failed" in r["message"].lower()
+    assert "solve failed" in r["message"].lower()
+
+
 # -------------------------
-# status/ping/cam_params/shutdown
+# status/ping/cam_params/shutdown (+error branches)
 # -------------------------
 def test_status_success(actions):
     r = actions.status()
@@ -297,7 +376,7 @@ def test_status_success(actions):
     assert "Cam1" in r["message"]
 
 
-def test_status_error(actions, monkeypatch):
+def test_status_error(actions):
     def boom():
         raise RuntimeError("status failed")
 
@@ -317,10 +396,19 @@ def test_ping_all_and_single(actions):
     assert actions.env.controller.ping_calls == [2]
 
 
+def test_ping_error(actions):
+    def boom(cam_id):
+        raise RuntimeError("ping failed")
+
+    actions.env.controller.ping = boom  # type: ignore
+    r = actions.ping(CamNum=2)
+    assert r["status"] == "error"
+    assert "ping failed" in r["message"].lower()
+
+
 def test_cam_params_all_and_single(actions):
     r = actions.cam_params(CamNum=0)
     assert r["status"] == "success"
-    # 메시지에 Cam{n}: {dict}가 들어가므로 간단히 포함 여부만 체크
     assert "Cam1" in r["message"]
 
     r = actions.cam_params(CamNum=2)
@@ -328,6 +416,20 @@ def test_cam_params_all_and_single(actions):
     assert "Cam2" in r["message"]
 
 
-def test_shutdown_calls_env_shutdown(actions):
+def test_cam_params_error(actions):
+    def boom(cam_id):
+        raise RuntimeError("params failed")
+
+    actions.env.controller.cam_params = boom  # type: ignore
+    r = actions.cam_params(CamNum=0)
+    assert r["status"] == "error"
+    assert "params failed" in r["message"].lower()
+
+
+def test_shutdown_calls_env_shutdown_and_logs(actions):
     actions.shutdown()
     assert actions.env.shutdown_called == 1
+    assert any(
+        lvl == "info" and "shutdown complete" in msg.lower()
+        for (lvl, msg) in actions.env.logger.logs
+    )
