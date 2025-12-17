@@ -4,6 +4,7 @@
 ![Ruff](https://github.com/mmingyeong/kspec_gfa_controller/actions/workflows/ruff.yml/badge.svg)
 [![Documentation Status](https://readthedocs.org/projects/kspec-gfa/badge/?version=latest)](https://kspec-gfa.readthedocs.io/en/latest/?badge=latest)
 [![codecov](https://codecov.io/github/mmingyeong/kspec_gfa_controller/graph/badge.svg?token=DDBX989XZ2)](https://codecov.io/github/mmingyeong/kspec_gfa_controller)
+[![tests](https://github.com/mmingyeong/kspec_gfa_controller/actions/workflows/tests.yml/badge.svg)](https://github.com/mmingyeong/kspec_gfa_controller/actions/workflows/tests.yml)
 
 # kspec_gfa_controller
 
