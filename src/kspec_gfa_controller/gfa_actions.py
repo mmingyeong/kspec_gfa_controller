@@ -281,17 +281,22 @@ class GFAActions:
 
             raw_dir = Path("/home/GAFOL/work/kspec_gfa_controller/src/kspec_gfa_controller/img/raw")
 
-            image_list = sorted(raw_dir.glob("*.fits"))          # 또는 *.fit, *.fits.gz 등 필요하면 추가
-            # image_list = sorted(raw_dir.rglob("*.fits"))       # 하위 폴더까지 다 찾고 싶으면 rglob
+            image_list = sorted(raw_dir.glob("*.fits"))
+            image_names = [p.name for p in image_list]   # ✅ 파일명만
 
             crval1_list, crval2_list = get_crvals_from_images(
                 image_list,
                 max_workers=max_workers,
             )
-
+            
             msg = f"Pointing completed. Computed CRVALs for {len(image_list)} images."
+
             return self._generate_response(
-                "success", msg, images=image_list, crval1=crval1_list, crval2=crval2_list
+                "success",
+                msg,
+                images=image_names,      # ✅ 파일명 리스트로 반환
+                crval1=crval1_list,
+                crval2=crval2_list,
             )
 
         except Exception as e:
