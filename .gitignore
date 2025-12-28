@@ -48,3 +48,10 @@ Thumbs.db
 *.mov
 *.wmv
 
+cat >> .gitignore <<'EOF'
+# Generated data / logs
+src/img/
+src/log/
+*.fits
+*.log
+EOF

@@ -101,29 +101,79 @@ class GFAController:
         self.img_class = GFAImage(logger)
         self.open_cameras = {}
 
+        # Async safety for shared dict updates
+        self._open_cameras_lock = asyncio.Lock()
+
         self.logger.info("GFAController initialization complete.")
 
-    def open_all_cameras(self):
-        """Open all cameras once at startup."""
+    async def open_all_cameras(self):
+        """Open all cameras once at startup (concurrently via asyncio)."""
         self.logger.info("Opening all cameras...")
-        for cam_key, cam_info in self.cameras_info.items():
+
+        async def _open_one(cam_key: str, cam_info: dict):
             ip = cam_info["IpAddress"]
-            dev_info = py.DeviceInfo()
-            dev_info.SetIpAddress(ip)
-            cam = py.InstantCamera(self.tlf.CreateDevice(dev_info))
-            cam.Open()
-            self.open_cameras[cam_key] = cam
+
+            def _blocking_open():
+                dev_info = py.DeviceInfo()
+                dev_info.SetIpAddress(ip)
+                cam = py.InstantCamera(self.tlf.CreateDevice(dev_info))
+                cam.Open()
+                return cam
+
+            cam = await asyncio.to_thread(_blocking_open)
+
+            async with self._open_cameras_lock:
+                self.open_cameras[cam_key] = cam
+
             self.logger.info(f"{cam_key} opened (IP {ip}).")
+
+        tasks = [
+            asyncio.create_task(_open_one(cam_key, cam_info))
+            for cam_key, cam_info in self.cameras_info.items()
+        ]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        failures = []
+        for (cam_key, _), r in zip(self.cameras_info.items(), results):
+            if isinstance(r, Exception):
+                failures.append((cam_key, r))
+                self.logger.exception(f"Failed to open {cam_key}: {r}")
+
+        if failures:
+            raise RuntimeError(
+                "Some cameras failed to open: "
+                + ", ".join([f"{k} ({type(e).__name__})" for k, e in failures])
+            )
+
         self.logger.info("All cameras opened successfully.")
 
-    def close_all_cameras(self):
-        """Close all opened cameras."""
+    async def close_all_cameras(self):
+        """Close all opened cameras (concurrently via asyncio)."""
         self.logger.info("Closing all cameras...")
-        for cam_key, cam in self.open_cameras.items():
-            if cam.IsOpen():
-                cam.Close()
+
+        async with self._open_cameras_lock:
+            items = list(self.open_cameras.items())
+
+        async def _close_one(cam_key: str, cam):
+            def _blocking_close():
+                if cam.IsOpen():
+                    cam.Close()
+
+            try:
+                await asyncio.to_thread(_blocking_close)
                 self.logger.info(f"{cam_key} closed.")
-        self.open_cameras.clear()
+            except Exception as e:
+                self.logger.exception(f"Failed to close {cam_key}: {e}")
+
+        await asyncio.gather(
+            *(asyncio.create_task(_close_one(cam_key, cam)) for cam_key, cam in items),
+            return_exceptions=True,
+        )
+
+        async with self._open_cameras_lock:
+            self.open_cameras.clear()
+
         self.logger.info("All cameras closed.")
 
     def ping(self, CamNum: int = 0):
