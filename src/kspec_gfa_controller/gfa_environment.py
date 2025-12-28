@@ -76,23 +76,11 @@ class GFAEnvironment:
         )
 
         if role == "plate":
-<<<<<<< HEAD:src/kspec_gfa_controller/gfa_environment.py
-            if hasattr(self.controller, "open_selected_cameras"):
-                self.controller.open_selected_cameras(self.camera_ids)
-            else:
-                raise AttributeError(
-                    "GFAController has no method 'open_selected_cameras'"
-                )
-
-=======
             self.controller = GFAController(self.gfa_config_path, self.logger)
-            #self.controller.open_selected_cameras(self.camera_ids)
->>>>>>> 7264d12 (Refactor camera open/close to use asyncio for concurrent initialization):src/gfa_environment.py
             self.astrometry = GFAAstrometry(self.ast_config_path, self.logger)
             self.guider = GFAGuider(self.ast_config_path, self.logger)
         elif role == "finder":
             self.controller = GFAController(self.gfa_config_path, self.logger)
-            #self.controller.open_camera(7)  # Only finder cam
             self.astrometry = None
             self.guider = None
 
