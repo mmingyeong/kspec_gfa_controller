@@ -23,6 +23,36 @@ from astropy.table import Table, vstack
 from astropy.utils.data import get_pkg_data_filename
 
 
+# -----------------------------------------------------------------------------
+# ✅ FORCE solve-field path (ignore conda PATH/which)
+# -----------------------------------------------------------------------------
+DEFAULT_SOLVE_FIELD = "/home/yyoon/astrometry/bin/solve-field"
+
+
+def _get_solve_field_path(logger: logging.Logger, env: Optional[dict] = None) -> str:
+    """
+    Always use fixed solve-field path by default (DEFAULT_SOLVE_FIELD),
+    regardless of conda PATH.
+    Optionally allow override via env var ASTROMETRY_SOLVE_FIELD.
+    """
+    p = None
+    if env is not None:
+        p = env.get("ASTROMETRY_SOLVE_FIELD")
+    if not p:
+        p = os.environ.get("ASTROMETRY_SOLVE_FIELD")
+
+    solve_field = (p or DEFAULT_SOLVE_FIELD).strip()
+    sp = Path(solve_field)
+
+    if not sp.exists():
+        raise FileNotFoundError(f"solve-field not found: {solve_field}")
+    if not os.access(str(sp), os.X_OK):
+        raise PermissionError(f"solve-field is not executable: {solve_field}")
+
+    logger.debug(f"Using solve-field from (fixed): {solve_field}")
+    return str(sp)
+
+
 def _get_default_config_path() -> str:
     """
     Returns the default configuration path for astrometry.
@@ -146,7 +176,11 @@ class GFAAstrometry:
         """
         Return env for subprocess calls. If not set, fallback to current process env.
         """
-        return self._subprocess_env if self._subprocess_env is not None else os.environ.copy()
+        return (
+            self._subprocess_env
+            if self._subprocess_env is not None
+            else os.environ.copy()
+        )
 
     def process_file(self, flname: str):
         """
@@ -243,15 +277,8 @@ class GFAAstrometry:
         # ✅ use injected subprocess env (if set)
         env = self._get_subprocess_env()
 
-        # ✅ find solve-field using env PATH (important when PATH changes after camera open)
-        solve_field_path = shutil.which("solve-field", path=env.get("PATH"))
-        if not solve_field_path:
-            raise FileNotFoundError(
-                "solve-field not found! Ensure it is installed and in PATH."
-            )
-
-        # Detailed path -> debug
-        self.logger.debug(f"Using solve-field from: {solve_field_path}")
+        # ✅ ALWAYS use fixed solve-field path (ignore conda PATH/which)
+        solve_field_path = _get_solve_field_path(self.logger, env=env)
 
         scale_low, scale_high = self.inpar["astrometry"]["scale_range"]
         radius = self.inpar["astrometry"]["radius"]

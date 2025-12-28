@@ -6,10 +6,11 @@ import asyncio
 import shutil
 from datetime import datetime
 from typing import Union, List, Dict, Any, Optional
+from pathlib import Path
 
 from .gfa_logger import GFALogger
 from .gfa_environment import create_environment, GFAEnvironment
-from .gfa_getcrval import get_crvals_from_images
+from .gfa_getcrval import get_crvals_from_images, get_crval_from_image
 
 logger = GFALogger(__file__)
 
@@ -236,18 +237,18 @@ class GFAActions:
             self.env.logger.info("Starting pointing sequence...")
             self.env.logger.info(f"Target RA/DEC: {ra}, {dec}")
 
-            if clear_dir:
-                for fn in os.listdir(pointing_raw_path):
-                    fp = os.path.join(pointing_raw_path, fn)
-                    if os.path.isfile(fp):
-                        os.remove(fp)
+            #if clear_dir:
+            #    for fn in os.listdir(pointing_raw_path):
+            #        fp = os.path.join(pointing_raw_path, fn)
+            #        if os.path.isfile(fp):
+            #            os.remove(fp)
 
             # --- camera open/grab/close ---
             await self.env.controller.open_all_cameras()
             try:
                 await self.env.controller.grab(
                     CamNum, ExpTime, Binning,
-                    output_dir=pointing_raw_path,
+                    output_dir="./test_raw",
                     ra=ra, dec=dec
                 )
             finally:
@@ -256,37 +257,42 @@ class GFAActions:
                 except Exception as e:
                     self.env.logger.warning(f"close_all_cameras failed: {e}")
 
-            images = [
-                os.path.join(pointing_raw_path, fn)
-                for fn in sorted(os.listdir(pointing_raw_path))
-                if fn.lower().endswith((".fits", ".fit", ".fts"))
-            ]
-            if not images:
-                msg = f"No FITS images found in {pointing_raw_path}"
-                self.env.logger.error(msg)
-                return self._generate_response(
-                    "error", msg, images=[], crval1=[], crval2=[]
-                )
+            #images = [
+            #    os.path.join(pointing_raw_path, fn)
+            #    for fn in sorted(os.listdir(pointing_raw_path))
+            #    if fn.lower().endswith((".fits", ".fit", ".fts"))
+            #]
+            #if not images:
+            #    msg = f"No FITS images found in {pointing_raw_path}"
+            #    self.env.logger.error(msg)
+            #    return self._generate_response(
+            #        "error", msg, images=[], crval1=[], crval2=[]
+            #    )
 
             # --- apply the same "clean env" fix BEFORE any solve-field runs ---
-            clean_env = _make_clean_subprocess_env()
-            if hasattr(self.env.astrometry, "set_subprocess_env"):
-                self.env.astrometry.set_subprocess_env(clean_env)
+            #clean_env = _make_clean_subprocess_env()
+            #if hasattr(self.env.astrometry, "set_subprocess_env"):
+            #    self.env.astrometry.set_subprocess_env(clean_env)
 
-            self.env.logger.info(f"Found {len(images)} images for pointing.")
+            #self.env.logger.info(f"Found {len(images)} images for pointing.")
             self.env.logger.info(
                 f"Solving astrometry for CRVALs (max_workers={max_workers})..."
             )
 
+            raw_dir = Path("/home/GAFOL/work/kspec_gfa_controller/src/kspec_gfa_controller/img/raw")
+
+            image_list = sorted(raw_dir.glob("*.fits"))          # 또는 *.fit, *.fits.gz 등 필요하면 추가
+            # image_list = sorted(raw_dir.rglob("*.fits"))       # 하위 폴더까지 다 찾고 싶으면 rglob
+
             crval1_list, crval2_list = get_crvals_from_images(
-                images,
+                image_list,
                 max_workers=max_workers,
             )
 
-            msg = f"Pointing completed. Computed CRVALs for {len(images)} images."
-            return self._generate_response(
-                "success", msg, images=images, crval1=crval1_list, crval2=crval2_list
-            )
+            #msg = f"Pointing completed. Computed CRVALs for {len(images)} images."
+            #return self._generate_response(
+            #    "success", msg, images=images, crval1=crval1_list, crval2=crval2_list
+            #)
 
         except Exception as e:
             self.env.logger.error(f"Pointing failed: {str(e)}")
