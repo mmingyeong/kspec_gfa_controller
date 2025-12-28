@@ -235,19 +235,13 @@ class GFAActions:
             self.env.logger.info("Starting guiding sequence...")
 
             os.makedirs(raw_save_path, exist_ok=True)
-<<<<<<< HEAD:src/kspec_gfa_controller/gfa_actions.py
-            self.env.logger.info("Grabbing raw image...")
-            self.env.controller.grab(
-                0, ExpTime, 4, output_dir=raw_save_path, ra=ra, dec=dec
-            )
-=======
+            
             #self.env.logger.info("Open all plate cameras...")
             #await self.env.controller.open_all_cameras()
             #self.env.logger.info("Grabbing raw image...")
             #await self.env.controller.grab(0, ExpTime, 4, output_dir=raw_save_path, ra=ra, dec=dec)
             #self.env.logger.info("Close all plate cameras...")
             #await self.env.controller.close_all_cameras()
->>>>>>> 7264d12 (Refactor camera open/close to use asyncio for concurrent initialization):src/gfa_actions.py
 
             if save:
                 os.makedirs(grab_save_path, exist_ok=True)
@@ -264,15 +258,9 @@ class GFAActions:
             self.env.logger.info("Executing guider offset calculation...")
             fdx, fdy, fwhm = self.env.guider.exe_cal()
 
-<<<<<<< HEAD:src/kspec_gfa_controller/gfa_actions.py
-            self.env.logger.info("Clearing temp astrometry data...")
-            self.env.astrometry.clear_raw_and_processed_files()
-
-=======
             #self.env.logger.info("Clearing temp astrometry data...")
             #self.env.astrometry.clear_raw_and_processed_files()
             
->>>>>>> 7264d12 (Refactor camera open/close to use asyncio for concurrent initialization):src/gfa_actions.py
             try:
                 fwhm_val = float(fwhm)
             except ValueError:
@@ -351,23 +339,14 @@ class GFAActions:
 
             # 1) Grab images -> pointing_raw 저장
             # guiding()에서처럼 controller.grab을 사용 (동기 함수인 경우가 많음)
-<<<<<<< HEAD:src/kspec_gfa_controller/gfa_actions.py
-            self.env.logger.info(
-                f"Grabbing pointing images (CamNum={CamNum}, ExpTime={ExpTime}, Binning={Binning})..."
-            )
-            self.env.controller.grab(
-                CamNum, ExpTime, Binning, output_dir=pointing_raw_path, ra=ra, dec=dec
-            )
 
-=======
             self.env.logger.info("Open all plate cameras...")
             await self.env.controller.open_all_cameras()
             self.env.logger.info(f"Grabbing pointing images (CamNum={CamNum}, ExpTime={ExpTime}, Binning={Binning})...")
             await self.env.controller.grab(CamNum, ExpTime, Binning, output_dir=pointing_raw_path, ra=ra, dec=dec)
             self.env.logger.info("Close all plate cameras...")
             await self.env.controller.close_all_cameras()
-            
->>>>>>> 7264d12 (Refactor camera open/close to use asyncio for concurrent initialization):src/gfa_actions.py
+
             # 2) 디렉토리의 FITS 이미지 목록 읽기
             images = []
             for fn in sorted(os.listdir(pointing_raw_path)):
