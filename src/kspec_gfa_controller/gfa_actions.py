@@ -164,7 +164,6 @@ class GFAActions:
         try:
             self.env.logger.info("Starting guiding sequence...")
 
-            # --- camera open/grab/close ---
             await self.env.controller.open_all_cameras()
             try:
                 # NOTE: output_dir는 실제 raw_save_path로 통일하는 걸 권장
@@ -179,7 +178,6 @@ class GFAActions:
                 except Exception as e:
                     self.env.logger.warning(f"close_all_cameras failed: {e}")
 
-            # --- optional save copy ---
             if save:
                 os.makedirs(grab_save_path, exist_ok=True)
                 for fname in os.listdir(raw_save_path):
@@ -198,8 +196,6 @@ class GFAActions:
 
             self.env.logger.info("Executing guider offset calculation...")
             fdx, fdy, fwhm = self.env.guider.exe_cal()
-            
-            # self.env.astrometry.lear_raw_and_processed_files()
 
             try:
                 fwhm_val = float(fwhm)
@@ -246,6 +242,7 @@ class GFAActions:
                     if os.path.isfile(fp):
                         os.remove(fp)
 
+            # --- camera open/grab/close ---
             await self.env.controller.open_all_cameras()
             try:
                 await self.env.controller.grab(
@@ -267,12 +264,24 @@ class GFAActions:
             if not images:
                 msg = f"No FITS images found in {pointing_raw_path}"
                 self.env.logger.error(msg)
-                return self._generate_response("error", msg, images=[], crval1=[], crval2=[])
+                return self._generate_response(
+                    "error", msg, images=[], crval1=[], crval2=[]
+                )
+
+            # --- apply the same "clean env" fix BEFORE any solve-field runs ---
+            clean_env = _make_clean_subprocess_env()
+            if hasattr(self.env.astrometry, "set_subprocess_env"):
+                self.env.astrometry.set_subprocess_env(clean_env)
 
             self.env.logger.info(f"Found {len(images)} images for pointing.")
-            self.env.logger.info(f"Solving astrometry for CRVALs (max_workers={max_workers})...")
+            self.env.logger.info(
+                f"Solving astrometry for CRVALs (max_workers={max_workers})..."
+            )
 
-            crval1_list, crval2_list = get_crvals_from_images(images, max_workers=max_workers)
+            crval1_list, crval2_list = get_crvals_from_images(
+                images,
+                max_workers=max_workers,
+            )
 
             msg = f"Pointing completed. Computed CRVALs for {len(images)} images."
             return self._generate_response(

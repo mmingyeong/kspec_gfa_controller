@@ -522,7 +522,7 @@ class GFAAstrometry:
             crval1_results, crval2_results = [], []
             failed_files = []
 
-            with ThreadPoolExecutor(max_workers=1) as executor:
+            with ThreadPoolExecutor(max_workers=8) as executor:
                 futures = {
                     executor.submit(self.combined_function, flname): flname
                     for flname in self.raws
@@ -561,7 +561,7 @@ class GFAAstrometry:
             )
             failed_files = []
 
-            with ThreadPoolExecutor(max_workers=1) as executor:
+            with ThreadPoolExecutor(max_workers=8) as executor:
                 futures = {
                     executor.submit(self.process_file, flname): flname
                     for flname in self.raws
