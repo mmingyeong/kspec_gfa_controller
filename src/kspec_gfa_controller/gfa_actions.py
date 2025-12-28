@@ -289,10 +289,10 @@ class GFAActions:
                 max_workers=max_workers,
             )
 
-            #msg = f"Pointing completed. Computed CRVALs for {len(images)} images."
-            #return self._generate_response(
-            #    "success", msg, images=images, crval1=crval1_list, crval2=crval2_list
-            #)
+            msg = f"Pointing completed. Computed CRVALs for {len(image_list)} images."
+            return self._generate_response(
+                "success", msg, images=image_list, crval1=crval1_list, crval2=crval2_list
+            )
 
         except Exception as e:
             self.env.logger.error(f"Pointing failed: {str(e)}")
