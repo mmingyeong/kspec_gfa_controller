@@ -536,11 +536,7 @@ class GFAGuider:
                 dx.append(0)
                 dy.append(0)
                 peakc.append(-1)
-<<<<<<< HEAD:src/kspec_gfa_controller/gfa_guider.py
-                self.logger.warning(f"Error finding peaks for star {i + 1}: {exc}")
-=======
                 self.logger.warning(f"Finding peaks for star {i+1}: {exc}")
->>>>>>> 7264d12 (Refactor camera open/close to use asyncio for concurrent initialization):src/gfa_guider.py
 
         self.logger.debug("==== Finished centroid offset calculation ====")
         return dx, dy, peakc, cutoutn_stack

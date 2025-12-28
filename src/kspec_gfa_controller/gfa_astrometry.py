@@ -128,6 +128,26 @@ class GFAAstrometry:
         ]:
             os.makedirs(directory, exist_ok=True)
 
+        # ---------------------------------------------------------------------
+        # ✅ Subprocess environment override (solve-field 등 외부 프로세스용)
+        # ---------------------------------------------------------------------
+        self._subprocess_env = None  # type: Optional[dict]
+
+    # -------------------------------------------------------------------------
+    # ✅ Public API: set subprocess env
+    # -------------------------------------------------------------------------
+    def set_subprocess_env(self, env: dict) -> None:
+        """
+        Set environment variables for subprocess calls (solve-field, etc.).
+        """
+        self._subprocess_env = env
+
+    def _get_subprocess_env(self) -> dict:
+        """
+        Return env for subprocess calls. If not set, fallback to current process env.
+        """
+        return self._subprocess_env if self._subprocess_env is not None else os.environ.copy()
+
     def process_file(self, flname: str):
         """
         Processes a FITS file: subtracts sky values, crops the image,
@@ -220,7 +240,11 @@ class GFAAstrometry:
         """
         self.logger.info(f"Starting astrometry process for {newname}.")
 
-        solve_field_path = shutil.which("solve-field")
+        # ✅ use injected subprocess env (if set)
+        env = self._get_subprocess_env()
+
+        # ✅ find solve-field using env PATH (important when PATH changes after camera open)
+        solve_field_path = shutil.which("solve-field", path=env.get("PATH"))
         if not solve_field_path:
             raise FileNotFoundError(
                 "solve-field not found! Ensure it is installed and in PATH."
@@ -253,7 +277,12 @@ class GFAAstrometry:
 
         try:
             result = subprocess.run(
-                input_command, shell=True, capture_output=True, text=True, check=True
+                input_command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=True,
+                env=env,  # ✅ 핵심
             )
         except subprocess.CalledProcessError as e:
             self.logger.error(f"solve-field execution failed for {newname}")
@@ -266,7 +295,11 @@ class GFAAstrometry:
         )
         list_files_command = f"ls -lh {self.temp_dir}"
         list_files = subprocess.run(
-            list_files_command, shell=True, capture_output=True, text=True
+            list_files_command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            env=env,  # ✅ env 통일
         )
         self.logger.debug(f"Files in temp directory:\n{list_files.stdout}")
 
@@ -489,7 +522,7 @@ class GFAAstrometry:
             crval1_results, crval2_results = [], []
             failed_files = []
 
-            with ThreadPoolExecutor(max_workers=8) as executor:
+            with ThreadPoolExecutor(max_workers=1) as executor:
                 futures = {
                     executor.submit(self.combined_function, flname): flname
                     for flname in self.raws
@@ -528,7 +561,7 @@ class GFAAstrometry:
             )
             failed_files = []
 
-            with ThreadPoolExecutor(max_workers=8) as executor:
+            with ThreadPoolExecutor(max_workers=1) as executor:
                 futures = {
                     executor.submit(self.process_file, flname): flname
                     for flname in self.raws

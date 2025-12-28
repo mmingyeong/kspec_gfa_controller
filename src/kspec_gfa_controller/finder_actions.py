@@ -11,8 +11,8 @@ import shutil
 from datetime import datetime
 from typing import Dict, Any, Optional
 
-from gfa_logger import GFALogger
-from gfa_environment import create_environment, GFAEnvironment
+from .gfa_logger import GFALogger
+from .gfa_environment import create_environment, GFAEnvironment
 
 logger = GFALogger(__file__)
 

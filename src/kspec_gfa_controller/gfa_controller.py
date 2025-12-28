@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import List
 
 
-from gfa_img import GFAImage
+from .gfa_img import GFAImage
 
 __all__ = ["GFAController"]
 

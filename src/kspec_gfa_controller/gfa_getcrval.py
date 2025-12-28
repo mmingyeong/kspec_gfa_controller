@@ -25,7 +25,7 @@ from astropy.io import fits
 
 # Optional reuse from gfa_astrometry.py (config path / logger)
 try:
-    from gfa_astrometry import _get_default_config_path, _get_default_logger
+    from .gfa_astrometry import _get_default_config_path, _get_default_logger
 except Exception:
     _get_default_config_path = None
     _get_default_logger = None
