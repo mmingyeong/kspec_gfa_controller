@@ -12,6 +12,7 @@ astropy = "^6.1.2"
 datetime = "^5.5"
 asyncio = "^3.4.3"
 pypylon = "^4.0.0"
+pillow = "^10.0.0"
 
 [tool.poetry.scripts]
 set-permissions = "scripts.set_permissions:main"

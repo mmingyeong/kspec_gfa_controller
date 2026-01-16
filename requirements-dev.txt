@@ -7,3 +7,4 @@ astropy
 scipy
 photutils
 pypylon
+pillow
