@@ -9,8 +9,8 @@ from kspec_gfa_controller.gfa_actions import GFAActions
 
 async def main():
     actions = GFAActions()
-    res = await actions.pointing(ra="00:00:00", dec="00:00:00")  # 또는 guiding()
-    #res = await actions.guiding()
+    #res = await actions.pointing(ra="00:00:00", dec="00:00:00")  # 또는 guiding()
+    res = actions.ping()
     print(res)
 
 if __name__ == "__main__":
