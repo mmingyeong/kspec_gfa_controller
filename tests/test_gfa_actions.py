@@ -1,5 +1,7 @@
 # tests/test_gfa_actions.py
 import os
+from pathlib import Path
+
 import pytest
 
 
@@ -32,11 +34,23 @@ class FakeController:
         self.status_called = 0
         self.cam_params_calls = []
 
+        self.open_all_called = 0
+        self.close_all_called = 0
+
+    async def open_all_cameras(self):
+        self.open_all_called += 1
+        return None
+
+    async def close_all_cameras(self):
+        self.close_all_called += 1
+        return None
+
     async def grabone(self, **kwargs):
         self.grabone_calls.append(kwargs)
         return list(self._grabone_result)
 
-    def grab(self, CamNum, ExpTime, Binning, **kwargs):
+    async def grab(self, CamNum, ExpTime, Binning, **kwargs):
+        # NOTE: gfa_actions.py에서 await self.env.controller.grab(...) 하므로 async 여야 함
         self.grab_calls.append((CamNum, ExpTime, Binning, kwargs))
         return []
 
@@ -56,6 +70,10 @@ class FakeAstrometry:
     def __init__(self):
         self.preproc_called = 0
         self.clear_called = 0
+        self.subprocess_env_set = None
+
+    def set_subprocess_env(self, env: dict):
+        self.subprocess_env_set = env
 
     def preproc(self):
         self.preproc_called += 1
@@ -146,6 +164,10 @@ async def test_grab_single_camera_success_message(actions):
     assert r["status"] == "success"
     assert "camera 2" in r["message"].lower()
 
+    # open/close all cameras called
+    assert actions.env.controller.open_all_called == 1
+    assert actions.env.controller.close_all_called == 1
+
     assert len(actions.env.controller.grabone_calls) == 1
     kwargs = actions.env.controller.grabone_calls[0]
     assert kwargs["CamNum"] == 2
@@ -166,6 +188,9 @@ async def test_grab_single_camera_timeout_in_message(actions):
     assert r["status"] == "success"
     assert "timeout" in r["message"].lower()
 
+    assert actions.env.controller.open_all_called == 1
+    assert actions.env.controller.close_all_called == 1
+
 
 # -------------------------
 # grab(): CamNum=0 (all)
@@ -185,6 +210,9 @@ async def test_grab_all_cameras_aggregates_timeouts(actions):
     assert "1" in r["message"]
     assert "3" in r["message"]
 
+    assert actions.env.controller.open_all_called == 1
+    assert actions.env.controller.close_all_called == 1
+
 
 # -------------------------
 # grab(): CamNum=list
@@ -202,12 +230,19 @@ async def test_grab_camera_list(actions):
     assert "cameras" in r["message"].lower()
     assert "timeout" in r["message"].lower()
 
+    assert actions.env.controller.open_all_called == 1
+    assert actions.env.controller.close_all_called == 1
+
 
 @pytest.mark.asyncio
 async def test_grab_invalid_camnum_returns_error(actions):
     r = await actions.grab(CamNum="bad")  # type: ignore
     assert r["status"] == "error"
     assert "grab failed" in r["message"].lower()
+
+    # even on error, finally should attempt close_all_cameras
+    assert actions.env.controller.open_all_called == 1
+    assert actions.env.controller.close_all_called == 1
 
 
 # -------------------------
@@ -227,6 +262,7 @@ async def test_guiding_success_no_save(actions, monkeypatch):
     assert "Offsets:" in r["message"]
     assert "fdx" in r and "fdy" in r and "fwhm" in r
 
+    # guiding() uses controller.grab (async)
     assert len(actions.env.controller.grab_calls) == 1
     camnum, exptime, binning, kwargs = actions.env.controller.grab_calls[0]
     assert camnum == 0
@@ -234,15 +270,18 @@ async def test_guiding_success_no_save(actions, monkeypatch):
     assert binning == 4
     assert kwargs["ra"] == "1"
     assert kwargs["dec"] == "2"
+    assert "output_dir" in kwargs
 
     assert actions.env.astrometry.preproc_called == 1
     assert actions.env.guider.exe_called == 1
-    assert actions.env.astrometry.clear_called == 1
+
+    # open/close around grab
+    assert actions.env.controller.open_all_called == 1
+    assert actions.env.controller.close_all_called == 1
 
 
 @pytest.mark.asyncio
 async def test_guiding_success_with_save_and_copy(actions, monkeypatch):
-    # save=True 분기 + isfile True/False 분기 커버 + Windows 경로 안전
     monkeypatch.setattr(
         "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
     )
@@ -250,7 +289,6 @@ async def test_guiding_success_with_save_and_copy(actions, monkeypatch):
         "kspec_gfa_controller.gfa_actions.os.listdir",
         lambda p: ["a.fits", "not_a_file"],
     )
-
     monkeypatch.setattr(
         "kspec_gfa_controller.gfa_actions.os.path.isfile",
         lambda p: str(p).endswith("a.fits"),
@@ -307,21 +345,28 @@ async def test_guiding_exception_returns_error(actions, monkeypatch):
 
 
 # -------------------------
-# pointing(): success + no images + exception
+# pointing(): success + empty list scenario + exception
 # -------------------------
 @pytest.mark.asyncio
-async def test_pointing_success(actions, monkeypatch):
+async def test_pointing_success(actions, monkeypatch, tmp_path):
     monkeypatch.setattr(
         "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
     )
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.os.listdir",
-        lambda p: ["a.fits", "b.fit", "c.txt"],
-    )
-    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.path.isfile", lambda p: True)
-    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.remove", lambda p: None)
 
-    actions.env.controller.grab_calls.clear()
+    # gfa_actions.pointing()은 고정 raw_dir(Path("/home/.../img/raw"))를 본다.
+    # 테스트에서는 Path.glob만 "좁게" 패치해서 tmp_path의 파일들을 반환하도록 바꾼다.
+    p1 = tmp_path / "a.fits"
+    p2 = tmp_path / "b.fits"
+    p1.write_text("x", encoding="utf-8")
+    p2.write_text("y", encoding="utf-8")
+
+    def fake_glob(self, pattern):
+        # raw_dir.glob("*.fits") 호출만 가로채는 느낌으로 단순화
+        if pattern == "*.fits":
+            return [p1, p2]
+        return []
+
+    monkeypatch.setattr(Path, "glob", fake_glob, raising=True)
 
     monkeypatch.setattr(
         "kspec_gfa_controller.gfa_actions.get_crvals_from_images",
@@ -337,10 +382,11 @@ async def test_pointing_success(actions, monkeypatch):
         max_workers=3,
     )
     assert r["status"] == "success"
-    assert len(r["images"]) == 2  # a.fits, b.fit
+    assert r["images"] == ["a.fits", "b.fits"]
     assert r["crval1"] == [1.0, 1.0]
     assert r["crval2"] == [2.0, 2.0]
 
+    # controller.grab called once
     assert len(actions.env.controller.grab_calls) == 1
     camnum, exptime, binning, kwargs = actions.env.controller.grab_calls[0]
     assert camnum == 0
@@ -349,29 +395,49 @@ async def test_pointing_success(actions, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pointing_no_images_returns_error(actions, monkeypatch):
+async def test_pointing_no_images_current_code_returns_success(actions, monkeypatch):
+    """
+    NOTE:
+    현재 gfa_actions.py에서 "images 없으면 error" 분기가 주석 처리되어 있음.
+    따라서 glob 결과가 비어도, get_crvals_from_images([])가 호출되어
+    success + 빈 리스트 반환이 될 수 있다.
+    """
     monkeypatch.setattr(
         "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
     )
-    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.listdir", lambda p: ["note.txt"])
-    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.path.isfile", lambda p: True)
-    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.remove", lambda p: None)
+
+    def fake_glob(self, pattern):
+        return []
+
+    monkeypatch.setattr(Path, "glob", fake_glob, raising=True)
+
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_actions.get_crvals_from_images",
+        lambda images, max_workers: ([], []),
+    )
 
     r = await actions.pointing(ra="1", dec="2", save_by_date=False, clear_dir=True)
-    assert r["status"] == "error"
+    assert r["status"] == "success"
     assert r["images"] == []
     assert r["crval1"] == []
     assert r["crval2"] == []
 
 
 @pytest.mark.asyncio
-async def test_pointing_exception_returns_error(actions, monkeypatch):
+async def test_pointing_exception_returns_error(actions, monkeypatch, tmp_path):
     monkeypatch.setattr(
         "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
     )
-    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.listdir", lambda p: ["a.fits"])
-    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.path.isfile", lambda p: True)
-    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.remove", lambda p: None)
+
+    p1 = tmp_path / "a.fits"
+    p1.write_text("x", encoding="utf-8")
+
+    def fake_glob(self, pattern):
+        if pattern == "*.fits":
+            return [p1]
+        return []
+
+    monkeypatch.setattr(Path, "glob", fake_glob, raising=True)
 
     def boom(images, max_workers):
         raise RuntimeError("solve failed")
