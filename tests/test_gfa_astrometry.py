@@ -296,12 +296,10 @@ def test_astrometry_no_solved_files_raises(tmp_path, monkeypatch):
         lambda name: r"C:\fake\solve-field.exe",
     )
 
-    # subprocess.run은 성공
-    def ok_run(cmd, shell, capture_output, text, check=False):
+    def ok_run(*args, **kwargs):
         class R:
             stdout = ""
             stderr = ""
-
         return R()
 
     monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.subprocess.run", ok_run)
