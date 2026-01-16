@@ -191,13 +191,10 @@ def gc_module(monkeypatch):
         def __init__(self, logger):
             self.logger = logger
             self.save_fits_calls = []
-            self.save_png_calls = []
 
         def save_fits(self, **kwargs):
             self.save_fits_calls.append(kwargs)
 
-        def save_png(self, **kwargs):
-            self.save_png_calls.append(kwargs)
 
 
     gfa_img_mod.GFAImage = FakeGFAImage
@@ -364,7 +361,7 @@ def test_cam_params_opens_temporarily_and_returns_params(controller):
 # configure_and_grab()
 # -------------------------
 @pytest.mark.asyncio
-async def test_configure_and_grab_success_saves_fits_and_png(controller):
+async def test_configure_and_grab_success_saves_fits(controller):
     cam = FakeInstantCamera(object(), open_state=True, raise_timeout=False)
 
     img = await controller.configure_and_grab(
@@ -392,15 +389,6 @@ async def test_configure_and_grab_success_saves_fits_and_png(controller):
     assert fits_call["dec"] == "2"
     assert fits_call["filename"].endswith(".fits")
 
-    # PNG save called
-    assert len(controller.img_class.save_png_calls) == 1
-    png_call = controller.img_class.save_png_calls[0]
-    assert png_call["output_directory"] == "./png"
-    assert png_call["filename"].endswith(".png")
-
-    # same basename (fits -> png)
-    assert png_call["filename"] == fits_call["filename"].replace(".fits", ".png")
-
 
 
 @pytest.mark.asyncio
@@ -419,7 +407,6 @@ async def test_configure_and_grab_timeout_returns_none(controller):
     )
     assert img is None
     assert len(controller.img_class.save_fits_calls) == 0
-    assert len(controller.img_class.save_png_calls) == 0
 
 
 @pytest.mark.asyncio
