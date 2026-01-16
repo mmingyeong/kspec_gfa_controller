@@ -3,7 +3,8 @@ import json
 from pathlib import Path
 
 import pytest
-import gfa_environment
+
+import kspec_gfa_controller.gfa_environment as gfa_environment
 
 
 # -------------------------
@@ -28,21 +29,14 @@ class FakeLogger:
 
 class FakeController:
     """
-    gfa_environment.GFAEnvironment 에서 사용하는 최소 API만 구현
+    GFAEnvironment에서 사용하는 최소 API만 구현
+    shutdown에서 close_camera만 사용함.
     """
 
     def __init__(self, config_path, logger):
         self.config_path = config_path
         self.logger = logger
-        self.open_selected_calls = []
-        self.open_camera_calls = []
         self.close_camera_calls = []
-
-    def open_selected_cameras(self, camera_ids):
-        self.open_selected_calls.append(list(camera_ids))
-
-    def open_camera(self, camnum: int):
-        self.open_camera_calls.append(camnum)
 
     def close_camera(self, camnum: int):
         self.close_camera_calls.append(camnum)
@@ -64,12 +58,6 @@ class FakeGuider:
 # Helpers
 # -------------------------
 def _write_env_cams_json(path: Path):
-    """
-    get_camera_ids가 읽을 cams.json 구조를 만들어줌.
-    - plate: Number 1~6
-    - finder: Number 7
-    - Number 없는 카메라 / 범위 밖 카메라도 섞어서 필터링 동작 확인
-    """
     cfg = {
         "GfaController": {
             "Elements": {
@@ -83,10 +71,7 @@ def _write_env_cams_json(path: Path):
                         "Cam6": {"IpAddress": "6.6.6.6", "Number": 6},
                         "Cam7": {"IpAddress": "7.7.7.7", "Number": 7},
                         "CamX": {"IpAddress": "9.9.9.9"},  # Number 없음 -> skip
-                        "Cam8": {
-                            "IpAddress": "8.8.8.8",
-                            "Number": 8,
-                        },  # 범위 밖 -> plate/finder 둘 다 제외
+                        "Cam8": {"IpAddress": "8.8.8.8", "Number": 8},  # 범위 밖 -> 제외
                     }
                 }
             }
@@ -99,40 +84,36 @@ def _write_env_cams_json(path: Path):
 # get_config_path()
 # -------------------------
 def test_get_config_path_success(tmp_path, monkeypatch):
-    # logger는 모듈 전역이므로 테스트용으로 교체
     fake_logger = FakeLogger()
     monkeypatch.setattr(gfa_environment, "logger", fake_logger)
 
-    f = tmp_path / "a.json"
-    f.write_text("{}", encoding="utf-8")
+    # base_dir을 tmp_path로 유도하기 위해 __file__을 tmp 경로로 바꾼다
+    fake_module_file = tmp_path / "gfa_environment.py"
+    fake_module_file.write_text("# dummy", encoding="utf-8")
+    monkeypatch.setattr(gfa_environment, "__file__", str(fake_module_file))
 
-    # relative_path는 base_dir 기준으로 join되는데,
-    # 여기서는 함수가 "존재하면 반환"만 보면 되므로,
-    # os.path.abspath(__file__) 기반 실제 base_dir을 우회하기 위해
-    # os.path.join 결과를 "실제 존재하는 파일"로 유도하는 방식은 번거로움.
-    # 대신 get_config_path 자체는 "isfile(full_path)"가 True이면 full_path 반환이므로
-    # full_path 계산을 고정시키기 위해 os.path.abspath/dirname/join을 건드리기보다,
-    # os.path.isfile과 os.path.join을 단순 패치해 테스트.
-    monkeypatch.setattr(gfa_environment.os.path, "join", lambda a, b: str(f))
-    monkeypatch.setattr(gfa_environment.os.path, "isfile", lambda p: True)
+    # base_dir/relative_path로 만들어질 "실제 파일"을 준비
+    rel = "whatever.json"
+    target = tmp_path / rel
+    target.write_text("{}", encoding="utf-8")
 
-    out = gfa_environment.get_config_path("whatever.json")
-    assert out == str(f)
+    out = gfa_environment.get_config_path(rel)
+    assert out == str(target)
 
 
 def test_get_config_path_missing_raises(tmp_path, monkeypatch):
     fake_logger = FakeLogger()
     monkeypatch.setattr(gfa_environment, "logger", fake_logger)
 
-    monkeypatch.setattr(
-        gfa_environment.os.path, "join", lambda a, b: str(tmp_path / "nope.json")
-    )
-    monkeypatch.setattr(gfa_environment.os.path, "isfile", lambda p: False)
+    fake_module_file = tmp_path / "gfa_environment.py"
+    fake_module_file.write_text("# dummy", encoding="utf-8")
+    monkeypatch.setattr(gfa_environment, "__file__", str(fake_module_file))
+
+    rel = "etc/cams.json"  # 없도록 둔다
 
     with pytest.raises(FileNotFoundError):
-        gfa_environment.get_config_path("etc/cams.json")
+        gfa_environment.get_config_path(rel)
 
-    # 에러 로그도 남는지(선택)
     assert any(lvl == "error" for (lvl, msg) in fake_logger.logs)
 
 
@@ -156,11 +137,10 @@ def test_get_camera_ids_plate_and_finder(tmp_path, monkeypatch):
 # -------------------------
 # GFAEnvironment: plate
 # -------------------------
-def test_environment_plate_initializes_and_opens_selected(tmp_path, monkeypatch):
+def test_environment_plate_initializes_components(tmp_path, monkeypatch):
     fake_logger = FakeLogger()
     monkeypatch.setattr(gfa_environment, "logger", fake_logger)
 
-    # 의존 클래스 전부 fake로
     monkeypatch.setattr(gfa_environment, "GFAController", FakeController)
     monkeypatch.setattr(gfa_environment, "GFAAstrometry", FakeAstrometry)
     monkeypatch.setattr(gfa_environment, "GFAGuider", FakeGuider)
@@ -179,37 +159,8 @@ def test_environment_plate_initializes_and_opens_selected(tmp_path, monkeypatch)
     assert env.role == "plate"
     assert env.camera_ids == [1, 2, 3, 4, 5, 6]
     assert isinstance(env.controller, FakeController)
-    assert env.controller.open_selected_calls == [[1, 2, 3, 4, 5, 6]]
     assert isinstance(env.astrometry, FakeAstrometry)
     assert isinstance(env.guider, FakeGuider)
-
-
-def test_environment_plate_missing_open_selected_method_raises(tmp_path, monkeypatch):
-    fake_logger = FakeLogger()
-    monkeypatch.setattr(gfa_environment, "logger", fake_logger)
-
-    class BadController(FakeController):
-        # open_selected_cameras 제거(또는 아예 없는 클래스로)
-        def __getattribute__(self, name):
-            if name == "open_selected_cameras":
-                raise AttributeError("nope")
-            return super().__getattribute__(name)
-
-    monkeypatch.setattr(gfa_environment, "GFAController", BadController)
-    monkeypatch.setattr(gfa_environment, "GFAAstrometry", FakeAstrometry)
-    monkeypatch.setattr(gfa_environment, "GFAGuider", FakeGuider)
-
-    cfgp = tmp_path / "cams.json"
-    _write_env_cams_json(cfgp)
-    astp = tmp_path / "ast.json"
-    astp.write_text("{}", encoding="utf-8")
-
-    with pytest.raises(AttributeError):
-        gfa_environment.GFAEnvironment(
-            gfa_config_path=str(cfgp),
-            ast_config_path=str(astp),
-            role="plate",
-        )
 
 
 def test_environment_plate_shutdown_closes_each_camera(tmp_path, monkeypatch):
@@ -232,21 +183,17 @@ def test_environment_plate_shutdown_closes_each_camera(tmp_path, monkeypatch):
     )
     env.shutdown()
 
-    # plate: camera_ids 순회 close_camera(cam_id)
     assert env.controller.close_camera_calls == [1, 2, 3, 4, 5, 6]
 
 
 # -------------------------
 # GFAEnvironment: finder
 # -------------------------
-def test_environment_finder_initializes_and_opens_cam7(tmp_path, monkeypatch):
+def test_environment_finder_initializes_components(tmp_path, monkeypatch):
     fake_logger = FakeLogger()
     monkeypatch.setattr(gfa_environment, "logger", fake_logger)
 
     monkeypatch.setattr(gfa_environment, "GFAController", FakeController)
-    # finder에서는 astrometry/guider None 이므로 patch 필수는 아니지만 안전하게
-    monkeypatch.setattr(gfa_environment, "GFAAstrometry", FakeAstrometry)
-    monkeypatch.setattr(gfa_environment, "GFAGuider", FakeGuider)
 
     cfgp = tmp_path / "cams.json"
     _write_env_cams_json(cfgp)
@@ -259,7 +206,7 @@ def test_environment_finder_initializes_and_opens_cam7(tmp_path, monkeypatch):
 
     assert env.role == "finder"
     assert env.camera_ids == [7]
-    assert env.controller.open_camera_calls == [7]
+    assert isinstance(env.controller, FakeController)
     assert env.astrometry is None
     assert env.guider is None
 
@@ -279,6 +226,7 @@ def test_environment_finder_shutdown_closes_cam7(tmp_path, monkeypatch):
         role="finder",
     )
     env.shutdown()
+
     assert env.controller.close_camera_calls == [7]
 
 
@@ -289,7 +237,6 @@ def test_create_environment_plate_and_finder(tmp_path, monkeypatch):
     fake_logger = FakeLogger()
     monkeypatch.setattr(gfa_environment, "logger", fake_logger)
 
-    # create_environment는 내부에서 get_config_path를 호출하므로 그 결과를 우리가 만든 파일로 돌려주기
     cams = tmp_path / "cams.json"
     _write_env_cams_json(cams)
     ast = tmp_path / "astrometry_params.json"
@@ -304,7 +251,6 @@ def test_create_environment_plate_and_finder(tmp_path, monkeypatch):
 
     monkeypatch.setattr(gfa_environment, "get_config_path", fake_get_config_path)
 
-    # 의존 클래스 fake
     monkeypatch.setattr(gfa_environment, "GFAController", FakeController)
     monkeypatch.setattr(gfa_environment, "GFAAstrometry", FakeAstrometry)
     monkeypatch.setattr(gfa_environment, "GFAGuider", FakeGuider)

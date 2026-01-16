@@ -91,7 +91,7 @@ class FakeEnv:
 
 @pytest.fixture
 def actions():
-    from gfa_actions import GFAActions
+    from kspec_gfa_controller.gfa_actions import GFAActions
 
     return GFAActions(env=FakeEnv())
 
@@ -100,7 +100,7 @@ def actions():
 # __init__: env None branch
 # -------------------------
 def test_init_env_none_uses_create_environment(monkeypatch):
-    import gfa_actions as ga
+    import kspec_gfa_controller.gfa_actions as ga
 
     calls = []
 
@@ -215,8 +215,10 @@ async def test_grab_invalid_camnum_returns_error(actions):
 # -------------------------
 @pytest.mark.asyncio
 async def test_guiding_success_no_save(actions, monkeypatch):
-    monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
-    monkeypatch.setattr("gfa_actions.os.listdir", lambda p: [])
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
+    )
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.listdir", lambda p: [])
 
     actions.env.controller.grab_calls.clear()
 
@@ -241,11 +243,17 @@ async def test_guiding_success_no_save(actions, monkeypatch):
 @pytest.mark.asyncio
 async def test_guiding_success_with_save_and_copy(actions, monkeypatch):
     # save=True 분기 + isfile True/False 분기 커버 + Windows 경로 안전
-    monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
-    monkeypatch.setattr("gfa_actions.os.listdir", lambda p: ["a.fits", "not_a_file"])
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_actions.os.listdir",
+        lambda p: ["a.fits", "not_a_file"],
+    )
 
     monkeypatch.setattr(
-        "gfa_actions.os.path.isfile", lambda p: str(p).endswith("a.fits")
+        "kspec_gfa_controller.gfa_actions.os.path.isfile",
+        lambda p: str(p).endswith("a.fits"),
     )
 
     copy_calls = []
@@ -253,7 +261,7 @@ async def test_guiding_success_with_save_and_copy(actions, monkeypatch):
     def fake_copy2(src, dst):
         copy_calls.append((src, dst))
 
-    monkeypatch.setattr("gfa_actions.shutil.copy2", fake_copy2)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.shutil.copy2", fake_copy2)
 
     r = await actions.guiding(ExpTime=1.5, save=True, ra="3", dec="4")
     assert r["status"] == "success"
@@ -272,8 +280,10 @@ async def test_guiding_success_with_save_and_copy(actions, monkeypatch):
 @pytest.mark.asyncio
 async def test_guiding_fwhm_nonfloat_becomes_zero(actions, monkeypatch):
     actions.env.guider = FakeGuider(fdx=1.0, fdy=2.0, fwhm="bad")  # type: ignore
-    monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
-    monkeypatch.setattr("gfa_actions.os.listdir", lambda p: [])
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
+    )
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.listdir", lambda p: [])
 
     r = await actions.guiding()
     assert r["status"] == "success"
@@ -286,8 +296,10 @@ async def test_guiding_exception_returns_error(actions, monkeypatch):
         raise RuntimeError("preproc failed")
 
     actions.env.astrometry.preproc = boom  # type: ignore
-    monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
-    monkeypatch.setattr("gfa_actions.os.listdir", lambda p: [])
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
+    )
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.listdir", lambda p: [])
 
     r = await actions.guiding()
     assert r["status"] == "error"
@@ -299,17 +311,20 @@ async def test_guiding_exception_returns_error(actions, monkeypatch):
 # -------------------------
 @pytest.mark.asyncio
 async def test_pointing_success(actions, monkeypatch):
-    monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
     monkeypatch.setattr(
-        "gfa_actions.os.listdir", lambda p: ["a.fits", "b.fit", "c.txt"]
+        "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
     )
-    monkeypatch.setattr("gfa_actions.os.path.isfile", lambda p: True)
-    monkeypatch.setattr("gfa_actions.os.remove", lambda p: None)
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_actions.os.listdir",
+        lambda p: ["a.fits", "b.fit", "c.txt"],
+    )
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.path.isfile", lambda p: True)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.remove", lambda p: None)
 
     actions.env.controller.grab_calls.clear()
 
     monkeypatch.setattr(
-        "gfa_actions.get_crvals_from_images",
+        "kspec_gfa_controller.gfa_actions.get_crvals_from_images",
         lambda images, max_workers: ([1.0] * len(images), [2.0] * len(images)),
     )
 
@@ -335,10 +350,12 @@ async def test_pointing_success(actions, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_pointing_no_images_returns_error(actions, monkeypatch):
-    monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
-    monkeypatch.setattr("gfa_actions.os.listdir", lambda p: ["note.txt"])
-    monkeypatch.setattr("gfa_actions.os.path.isfile", lambda p: True)
-    monkeypatch.setattr("gfa_actions.os.remove", lambda p: None)
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
+    )
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.listdir", lambda p: ["note.txt"])
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.path.isfile", lambda p: True)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.remove", lambda p: None)
 
     r = await actions.pointing(ra="1", dec="2", save_by_date=False, clear_dir=True)
     assert r["status"] == "error"
@@ -349,16 +366,17 @@ async def test_pointing_no_images_returns_error(actions, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_pointing_exception_returns_error(actions, monkeypatch):
-    # get_crvals_from_images에서 예외 -> pointing except 분기 커버
-    monkeypatch.setattr("gfa_actions.os.makedirs", lambda *a, **k: None)
-    monkeypatch.setattr("gfa_actions.os.listdir", lambda p: ["a.fits"])
-    monkeypatch.setattr("gfa_actions.os.path.isfile", lambda p: True)
-    monkeypatch.setattr("gfa_actions.os.remove", lambda p: None)
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
+    )
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.listdir", lambda p: ["a.fits"])
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.path.isfile", lambda p: True)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.remove", lambda p: None)
 
     def boom(images, max_workers):
         raise RuntimeError("solve failed")
 
-    monkeypatch.setattr("gfa_actions.get_crvals_from_images", boom)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.get_crvals_from_images", boom)
 
     r = await actions.pointing(ra="1", dec="2", save_by_date=False, clear_dir=False)
     assert r["status"] == "error"

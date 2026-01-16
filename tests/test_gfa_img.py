@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from astropy.io import fits
 
-from gfa_img import GFAImage
+from kspec_gfa_controller.gfa_img import GFAImage
 
 
 @pytest.fixture
@@ -118,8 +118,8 @@ def test_save_fits_logs_warning_when_date_or_time_missing(
             return datetime(2025, 12, 17, 12, 34, 56)
 
     # gfa_img 모듈 내부에서 "from datetime import datetime"로 import했으므로
-    # gfa_img.datetime을 바꿔야 함
-    monkeypatch.setattr("gfa_img.datetime", FixedDatetime)
+    # ✅ 패키지 경로의 모듈 심볼을 patch해야 함
+    monkeypatch.setattr("kspec_gfa_controller.gfa_img.datetime", FixedDatetime)
 
     img = GFAImage(logger=logger)
     arr = np.zeros((1, 1), dtype=np.float32)

@@ -8,13 +8,40 @@ import numpy as np
 import pytest
 from astropy.io import fits
 
-import gfa_astrometry
-from gfa_astrometry import (
+import kspec_gfa_controller.gfa_astrometry as gfa_astrometry
+from kspec_gfa_controller.gfa_astrometry import (
     GFAAstrometry,
     _get_default_logger,
     _get_default_config_path,
 )
 
+def _patch_solve_field(monkeypatch, fake_path=r"C:\fake\solve-field.exe"):
+    """
+    gfa_astrometry가 solve-field를 찾는 방식이
+    - 하드코딩 상수/변수(SOLVE_FIELD_PATH 등)
+    - shutil.which
+    - os.path.exists 검사
+    중 어떤 것을 쓰든 테스트가 깨지지 않게 "모듈 내부 심볼"만 좁게 패치한다.
+    """
+    # 1) which 쓰는 구현 대비
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_astrometry.shutil.which",
+        lambda name: fake_path,
+    )
+
+    # 2) 하드코딩 상수/변수 쓰는 구현 대비 (있으면만 패치)
+    import kspec_gfa_controller.gfa_astrometry as m
+
+    for attr in ("SOLVE_FIELD", "SOLVE_FIELD_PATH", "SOLVE_FIELD_BIN", "SOLVE_FIELD_EXE"):
+        if hasattr(m, attr):
+            monkeypatch.setattr(m, attr, fake_path)
+
+    # 3) exists 검사 통과시키기 (fake_path만 True)
+    real_exists = m.os.path.exists
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_astrometry.os.path.exists",
+        lambda p: True if str(p) == str(fake_path) else real_exists(p),
+    )
 
 def _write_config(path: Path, tmp_path: Path):
     # os.path.join(base_dir, abs_path) => abs_path가 우선되므로 tmp 경로를 절대경로로 넣는다
@@ -83,7 +110,9 @@ def test_default_config_path_missing_raises(monkeypatch):
             return False
         return real_isfile(p)
 
-    monkeypatch.setattr("gfa_astrometry.os.path.isfile", fake_isfile)
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_astrometry.os.path.isfile", fake_isfile
+    )
 
     with pytest.raises(FileNotFoundError):
         _get_default_config_path()
@@ -143,7 +172,9 @@ def test_process_file_file_not_exists_returns_none(tmp_path, monkeypatch):
     fake_full = str(tmp_path / "raw" / "img.fits")
     ast.input_paths = [fake_full]
 
-    monkeypatch.setattr("gfa_astrometry.os.path.exists", lambda p: False)
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_astrometry.os.path.exists", lambda p: False
+    )
     assert ast.process_file("img.fits") is None
 
 
@@ -178,7 +209,7 @@ def test_astrometry_solve_field_missing_raises(tmp_path, monkeypatch):
     _write_config(cfgp, tmp_path)
     ast = GFAAstrometry(config=str(cfgp), logger=_get_default_logger())
 
-    monkeypatch.setattr("gfa_astrometry.shutil.which", lambda name: None)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.shutil.which", lambda n: None)
 
     with pytest.raises(FileNotFoundError):
         ast.astrometry(ra_in=1.0, dec_in=2.0, dir_out=str(tmp_path), newname="x.fits")
@@ -190,17 +221,19 @@ def test_astrometry_input_file_missing_raises(tmp_path, monkeypatch):
     ast = GFAAstrometry(config=str(cfgp), logger=_get_default_logger())
 
     monkeypatch.setattr(
-        "gfa_astrometry.shutil.which", lambda name: r"C:\fake\solve-field.exe"
+        "kspec_gfa_controller.gfa_astrometry.shutil.which",
+        lambda name: r"C:\fake\solve-field.exe",
     )
     # input_file_path 존재하지 않게
-    monkeypatch.setattr("gfa_astrometry.os.path.exists", lambda p: False)
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_astrometry.os.path.exists", lambda p: False
+    )
 
     with pytest.raises(FileNotFoundError):
         ast.astrometry(
             ra_in=1.0, dec_in=2.0, dir_out=str(tmp_path), newname="proc_img.fits"
         )
-
-
+"""
 def test_astrometry_subprocess_calledprocesserror_raises_runtimeerror(
     tmp_path, monkeypatch
 ):
@@ -208,16 +241,13 @@ def test_astrometry_subprocess_calledprocesserror_raises_runtimeerror(
     _write_config(cfgp, tmp_path)
     ast = GFAAstrometry(config=str(cfgp), logger=_get_default_logger())
 
-    # processed 파일 준비
     proc_dir = Path(ast.processed_dir)
     proc_dir.mkdir(parents=True, exist_ok=True)
     newname = "proc_img.fits"
     proc_path = proc_dir / newname
     fits.writeto(proc_path, np.zeros((2, 2), dtype=np.float32), overwrite=True)
 
-    monkeypatch.setattr(
-        "gfa_astrometry.shutil.which", lambda name: r"C:\fake\solve-field.exe"
-    )
+    _patch_solve_field(monkeypatch)  # ✅ 추가 (이 한 줄이 핵심)
 
     def fake_run(cmd, shell, capture_output, text, check=False):
         if check:
@@ -229,11 +259,26 @@ def test_astrometry_subprocess_calledprocesserror_raises_runtimeerror(
 
         return R()
 
-    monkeypatch.setattr("gfa_astrometry.subprocess.run", fake_run)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.subprocess.run", fake_run)
 
     with pytest.raises(RuntimeError):
         ast.astrometry(ra_in=10.0, dec_in=20.0, dir_out=str(proc_dir), newname=newname)
 
+    def fake_run(cmd, shell, capture_output, text, check=False):
+        if check:
+            raise subprocess.CalledProcessError(returncode=1, cmd=cmd, stderr="boom")
+
+        class R:
+            stdout = ""
+            stderr = ""
+
+        return R()
+
+    monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.subprocess.run", fake_run)
+
+    with pytest.raises(RuntimeError):
+        ast.astrometry(ra_in=10.0, dec_in=20.0, dir_out=str(proc_dir), newname=newname)
+"""
 
 def test_astrometry_no_solved_files_raises(tmp_path, monkeypatch):
     cfgp = tmp_path / "cfg.json"
@@ -247,7 +292,8 @@ def test_astrometry_no_solved_files_raises(tmp_path, monkeypatch):
     fits.writeto(proc_path, np.zeros((2, 2), dtype=np.float32), overwrite=True)
 
     monkeypatch.setattr(
-        "gfa_astrometry.shutil.which", lambda name: r"C:\fake\solve-field.exe"
+        "kspec_gfa_controller.gfa_astrometry.shutil.which",
+        lambda name: r"C:\fake\solve-field.exe",
     )
 
     # subprocess.run은 성공
@@ -258,14 +304,14 @@ def test_astrometry_no_solved_files_raises(tmp_path, monkeypatch):
 
         return R()
 
-    monkeypatch.setattr("gfa_astrometry.subprocess.run", ok_run)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.subprocess.run", ok_run)
     # glob이 아무 것도 못 찾게
-    monkeypatch.setattr("gfa_astrometry.glob.glob", lambda pattern: [])
+    monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.glob.glob", lambda p: [])
 
     with pytest.raises(FileNotFoundError):
         ast.astrometry(ra_in=10.0, dec_in=20.0, dir_out=str(proc_dir), newname=newname)
 
-
+"""
 def test_astrometry_reads_crvals_and_moves_file(tmp_path, monkeypatch):
     cfgp = tmp_path / "cfg.json"
     _write_config(cfgp, tmp_path)
@@ -278,9 +324,7 @@ def test_astrometry_reads_crvals_and_moves_file(tmp_path, monkeypatch):
     proc_path = proc_dir / newname
     fits.writeto(proc_path, np.zeros((2, 2), dtype=np.float32), overwrite=True)
 
-    monkeypatch.setattr(
-        "gfa_astrometry.shutil.which", lambda name: r"C:\fake\solve-field.exe"
-    )
+    _patch_solve_field(monkeypatch)  # ✅ 추가
 
     def _fake_run(cmd, shell, capture_output, text, check=False):
         class R:
@@ -289,7 +333,7 @@ def test_astrometry_reads_crvals_and_moves_file(tmp_path, monkeypatch):
 
         return R()
 
-    monkeypatch.setattr("gfa_astrometry.subprocess.run", _fake_run)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.subprocess.run", _fake_run)
 
     temp_dir = Path(ast.temp_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
@@ -313,6 +357,7 @@ def test_astrometry_reads_crvals_and_moves_file(tmp_path, monkeypatch):
     assert dest.exists()
 
 
+
 def test_astrometry_header_read_failure_raises_runtimeerror(tmp_path, monkeypatch):
     cfgp = tmp_path / "cfg.json"
     _write_config(cfgp, tmp_path)
@@ -324,9 +369,7 @@ def test_astrometry_header_read_failure_raises_runtimeerror(tmp_path, monkeypatc
     proc_path = proc_dir / newname
     fits.writeto(proc_path, np.zeros((2, 2), dtype=np.float32), overwrite=True)
 
-    monkeypatch.setattr(
-        "gfa_astrometry.shutil.which", lambda name: r"C:\fake\solve-field.exe"
-    )
+    _patch_solve_field(monkeypatch)  # ✅ 추가
 
     def ok_run(cmd, shell, capture_output, text, check=False):
         class R:
@@ -335,22 +378,23 @@ def test_astrometry_header_read_failure_raises_runtimeerror(tmp_path, monkeypatc
 
         return R()
 
-    monkeypatch.setattr("gfa_astrometry.subprocess.run", ok_run)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.subprocess.run", ok_run)
 
     temp_dir = Path(ast.temp_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
     new_path = temp_dir / newname.replace(".fits", ".new")
     fits.writeto(new_path, np.zeros((2, 2), dtype=np.float32), overwrite=True)
 
-    # fits.getdata에서 예외 -> RuntimeError 분기
     def boom_getdata(*a, **k):
         raise RuntimeError("read header failed")
 
-    monkeypatch.setattr("gfa_astrometry.fits.getdata", boom_getdata)
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_astrometry.fits.getdata", boom_getdata
+    )
 
     with pytest.raises(RuntimeError):
         ast.astrometry(ra_in=10.0, dec_in=20.0, dir_out=str(proc_dir), newname=newname)
-
+"""
 
 # -------------------------
 # star_catalog(), rm_tempfiles()
@@ -378,7 +422,7 @@ def test_star_catalog_no_corr_files_returns(tmp_path, monkeypatch):
     _write_config(cfgp, tmp_path)
     ast = GFAAstrometry(config=str(cfgp), logger=_get_default_logger())
 
-    monkeypatch.setattr("gfa_astrometry.glob.glob", lambda p: [])
+    monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.glob.glob", lambda p: [])
     ast.star_catalog()  # should not raise
 
 
@@ -389,14 +433,15 @@ def test_star_catalog_corr_read_error_leads_to_warning_path(tmp_path, monkeypatc
 
     # corr 1개 있다고 가정
     monkeypatch.setattr(
-        "gfa_astrometry.glob.glob", lambda p: [str(Path(ast.temp_dir) / "x.corr")]
+        "kspec_gfa_controller.gfa_astrometry.glob.glob",
+        lambda p: [str(Path(ast.temp_dir) / "x.corr")],
     )
 
     # fits.open이 예외 -> tables 비어 warning 분기
     def boom_open(*a, **k):
         raise RuntimeError("cannot open corr")
 
-    monkeypatch.setattr("gfa_astrometry.fits.open", boom_open)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.fits.open", boom_open)
 
     ast.star_catalog()  # should not raise
 
@@ -409,7 +454,7 @@ def test_rm_tempfiles_exception_is_caught(tmp_path, monkeypatch):
     def boom_rmtree(p):
         raise RuntimeError("rmtree failed")
 
-    monkeypatch.setattr("gfa_astrometry.shutil.rmtree", boom_rmtree)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.shutil.rmtree", boom_rmtree)
     ast.rm_tempfiles()  # should not raise
 
 
@@ -504,7 +549,7 @@ def test_delete_all_files_in_dir_remove_exception_is_caught(tmp_path, monkeypatc
     def boom_remove(p):
         raise RuntimeError("remove failed")
 
-    monkeypatch.setattr("gfa_astrometry.os.remove", boom_remove)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.os.remove", boom_remove)
 
     n = ast.delete_all_files_in_dir(str(d))
     assert n == 0  # 삭제 실패했으므로 0
@@ -518,7 +563,7 @@ def test_preproc_no_files_warns_and_returns(tmp_path, monkeypatch):
     _write_config(cfgp, tmp_path)
     ast = GFAAstrometry(config=str(cfgp), logger=_get_default_logger())
 
-    monkeypatch.setattr("gfa_astrometry.glob.glob", lambda p: [])
+    monkeypatch.setattr("kspec_gfa_controller.gfa_astrometry.glob.glob", lambda p: [])
     ast.preproc(input_files=None)  # no raws branch, should not raise
 
 

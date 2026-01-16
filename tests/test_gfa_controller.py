@@ -184,8 +184,8 @@ def gc_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "pypylon.pylon", pylon_mod)
     monkeypatch.setitem(sys.modules, "pypylon.genicam", genicam_mod)
 
-    # gfa_img.GFAImage도 fake로
-    gfa_img_mod = types.ModuleType("gfa_img")
+    # gfa_img.GFAImage도 fake로 (패키지 경로로 주입)
+    gfa_img_mod = types.ModuleType("kspec_gfa_controller.gfa_img")
 
     class FakeGFAImage:
         def __init__(self, logger):
@@ -196,9 +196,10 @@ def gc_module(monkeypatch):
             self.save_calls.append(kwargs)
 
     gfa_img_mod.GFAImage = FakeGFAImage
-    monkeypatch.setitem(sys.modules, "gfa_img", gfa_img_mod)
+    monkeypatch.setitem(sys.modules, "kspec_gfa_controller.gfa_img", gfa_img_mod)
 
-    import gfa_controller
+    # ✅ 패키지 경로로 import
+    import kspec_gfa_controller.gfa_controller as gfa_controller
 
     importlib.reload(gfa_controller)
     return gfa_controller
@@ -298,38 +299,35 @@ def test_get_camera_param_int_and_nonint(controller):
 # -------------------------
 # open/close/status/ping
 # -------------------------
-def test_open_all_cameras_and_status_and_close_all(controller):
-    controller.open_all_cameras()
-    assert (
-        "Cam1" in controller.open_cameras
-        and controller.open_cameras["Cam1"].IsOpen() is True
-    )
-    assert (
-        "Cam2" in controller.open_cameras
-        and controller.open_cameras["Cam2"].IsOpen() is True
-    )
+@pytest.mark.asyncio
+async def test_close_all_cameras_closes_and_clears(controller):
+    cam1 = FakeInstantCamera(object(), open_state=True, raise_timeout=False)
+    cam2 = FakeInstantCamera(object(), open_state=True, raise_timeout=False)
 
-    st = controller.status()
-    assert st["Cam1"] is True
-    assert st["Cam2"] is True
+    controller.open_cameras = {"Cam1": cam1, "Cam2": cam2}
 
-    controller.close_all_cameras()
+    # precondition
+    assert cam1.IsOpen() is True
+    assert cam2.IsOpen() is True
+    assert "Cam1" in controller.open_cameras and "Cam2" in controller.open_cameras
+
+    # ✅ async 호출은 반드시 await
+    await controller.close_all_cameras()
+
+    # postcondition: 카메라 close 되었는지 + dict clear 되었는지
+    assert cam1.IsOpen() is False
+    assert cam2.IsOpen() is False
     assert controller.open_cameras == {}
 
-    st2 = controller.status()
-    assert st2["Cam1"] is False
-    assert st2["Cam2"] is False
-
-
 def test_ping_calls_os_system_with_ip(controller, monkeypatch):
-    # ✅ os는 인스턴스 속성이 아니라 모듈 전역이므로 gfa_controller.os.system을 patch해야 함
+    # ✅ 패키지 경로로 모듈 전역 심볼 patch
     called = {}
 
     def fake_system(cmd):
         called["cmd"] = cmd
         return 0
 
-    monkeypatch.setattr("gfa_controller.os.system", fake_system)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_controller.os.system", fake_system)
 
     controller.ping(CamNum=1)
     assert "1.1.1.1" in called["cmd"]
@@ -460,9 +458,7 @@ async def test_grabone_configure_returns_none_marks_timeout(controller, monkeypa
 
 
 @pytest.mark.asyncio
-async def test_grabone_configure_raises_exception_marks_timeout(
-    controller, monkeypatch
-):
+async def test_grabone_configure_raises_exception_marks_timeout(controller, monkeypatch):
     cam = FakeInstantCamera(object(), open_state=True, raise_timeout=False)
     controller.open_cameras["Cam1"] = cam
 

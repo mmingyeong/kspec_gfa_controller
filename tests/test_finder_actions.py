@@ -61,13 +61,13 @@ class FakeEnv:
 
 @pytest.fixture
 def finder_actions():
-    from finder_actions import FinderGFAActions
+    from kspec_gfa_controller.finder_actions import FinderGFAActions
 
     return FinderGFAActions(env=FakeEnv())
 
 
 def test_init_uses_create_environment_when_env_none(monkeypatch):
-    import finder_actions as fa
+    import kspec_gfa_controller.finder_actions as fa
 
     calls = []
 
@@ -141,8 +141,10 @@ async def test_grab_exception_returns_error(finder_actions):
 
 @pytest.mark.asyncio
 async def test_guiding_success_no_save(monkeypatch, finder_actions):
-    monkeypatch.setattr("finder_actions.os.makedirs", lambda *a, **k: None)
-    monkeypatch.setattr("finder_actions.os.listdir", lambda p: [])
+    monkeypatch.setattr(
+        "kspec_gfa_controller.finder_actions.os.makedirs", lambda *a, **k: None
+    )
+    monkeypatch.setattr("kspec_gfa_controller.finder_actions.os.listdir", lambda p: [])
 
     r = await finder_actions.guiding(ExpTime=2.0, save=False, ra="1", dec="2")
     assert r["status"] == "success"
@@ -167,20 +169,29 @@ async def test_guiding_success_with_save_and_copy(monkeypatch, finder_actions):
     def fake_makedirs(path, exist_ok=False):
         makedirs_calls.append((path, exist_ok))
 
-    monkeypatch.setattr("finder_actions.os.makedirs", fake_makedirs)
-    monkeypatch.setattr("finder_actions.os.listdir", lambda p: ["a.fits", "not_a_file"])
+    monkeypatch.setattr(
+        "kspec_gfa_controller.finder_actions.os.makedirs", fake_makedirs
+    )
+    monkeypatch.setattr(
+        "kspec_gfa_controller.finder_actions.os.listdir",
+        lambda p: ["a.fits", "not_a_file"],
+    )
 
     def fake_isfile(p):
-        return p.endswith("a.fits")
+        return str(p).endswith("a.fits")
 
-    monkeypatch.setattr("finder_actions.os.path.isfile", fake_isfile)
+    monkeypatch.setattr(
+        "kspec_gfa_controller.finder_actions.os.path.isfile", fake_isfile
+    )
 
     copy_calls = []
 
     def fake_copy2(src, dst):
         copy_calls.append((src, dst))
 
-    monkeypatch.setattr("finder_actions.shutil.copy2", fake_copy2)
+    monkeypatch.setattr(
+        "kspec_gfa_controller.finder_actions.shutil.copy2", fake_copy2
+    )
 
     r = await finder_actions.guiding(ExpTime=1.5, save=True, ra="3", dec="4")
     assert r["status"] == "success"
@@ -215,7 +226,7 @@ async def test_guiding_exception_returns_error(monkeypatch, finder_actions):
     def boom(*a, **k):
         raise RuntimeError("mkdir failed")
 
-    monkeypatch.setattr("finder_actions.os.makedirs", boom)
+    monkeypatch.setattr("kspec_gfa_controller.finder_actions.os.makedirs", boom)
 
     r = await finder_actions.guiding()
     assert r["status"] == "error"

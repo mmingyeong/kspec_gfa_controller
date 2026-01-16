@@ -1,6 +1,7 @@
 # tests/test_gfa_guider.py
 import json
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -10,8 +11,8 @@ pytest.importorskip("scipy")
 pytest.importorskip("photutils")
 pytest.importorskip("astropy")
 
-import gfa_guider as mod
-from gfa_guider import GFAGuider
+import kspec_gfa_controller.gfa_guider as mod
+from kspec_gfa_controller.gfa_guider import GFAGuider
 
 
 def _write_config(path: Path, tmp_path: Path, *, bad_json: bool = False):
@@ -45,20 +46,21 @@ def _write_config(path: Path, tmp_path: Path, *, bad_json: bool = False):
 # -------------------------
 # helper: _get_default_config_path / _get_default_logger
 # -------------------------
-def test_get_default_config_path_missing_raises(monkeypatch, tmp_path):
+def test_get_default_config_path_missing_raises(monkeypatch):
     # default_path가 없다고 강제
     monkeypatch.setattr(mod.os.path, "isfile", lambda p: False)
     with pytest.raises(FileNotFoundError):
         mod._get_default_config_path()
 
 
-def test_get_default_config_path_success(monkeypatch, tmp_path):
+def test_get_default_config_path_success(monkeypatch):
     # default_path 존재한다고 강제
     monkeypatch.setattr(mod.os.path, "isfile", lambda p: True)
     p = mod._get_default_config_path()
-    assert p.endswith(
-        "etc" + str(Path("/")).strip("/") + "astrometry_params.json"
-    ) or p.endswith("etc/astrometry_params.json")
+
+    # OS별 path separator 안전 비교
+    norm = os.path.normpath(p)
+    assert norm.endswith(os.path.normpath(os.path.join("etc", "astrometry_params.json")))
 
 
 def test_default_logger_no_duplicate_handlers():
@@ -250,7 +252,9 @@ def test_cal_centroid_offset_success_and_failure(tmp_path, monkeypatch):
             "peak_value": [123.0],
         }
 
-    monkeypatch.setattr("gfa_guider.pd.find_peaks", fake_find_peaks)
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_guider.pd.find_peaks", fake_find_peaks
+    )
 
     cutoutn_stack = []
     dx, dy, peakc, cutoutn_stack = g.cal_centroid_offset(
@@ -333,12 +337,10 @@ def test_cal_final_offset_above_threshold_and_trim_minmax(tmp_path, monkeypatch)
             self.mask = np.array([False] * n)
 
     monkeypatch.setattr(
-        "gfa_guider.sigma_clip",
+        "kspec_gfa_controller.gfa_guider.sigma_clip",
         lambda distances, sigma, maxiters: FakeClipped(len(distances)),
     )
 
-    # 6개면 >4라 min/max 제거 수행
-    # min=2.0, max=10.0 제거 후 [2,2,2,2] => mean=2.0 (crit_out=0.5 보다 큼)
     dxp = np.array([2.0, 2.0, 2.0, 2.0, 2.0, 10.0])
     dyp = np.zeros_like(dxp)
     pindp = np.arange(len(dxp))
@@ -373,7 +375,7 @@ def test_cal_seeing_save_fails_still_returns_value(tmp_path, monkeypatch):
     Path(g.cutout_path).mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(
-        "gfa_guider.fits.writeto",
+        "kspec_gfa_controller.gfa_guider.fits.writeto",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk full")),
     )
 
@@ -382,7 +384,7 @@ def test_cal_seeing_save_fails_still_returns_value(tmp_path, monkeypatch):
         cov = np.eye(5)
         return params, cov
 
-    monkeypatch.setattr("gfa_guider.curve_fit", fake_curve_fit)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_guider.curve_fit", fake_curve_fit)
 
     cutout = np.ones((11, 11), dtype=np.float32)
     fwhm = g.cal_seeing([cutout, cutout])
@@ -399,7 +401,7 @@ def test_cal_seeing_curve_fit_failure_returns_nan(tmp_path, monkeypatch):
     Path(g.cutout_path).mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(
-        "gfa_guider.curve_fit",
+        "kspec_gfa_controller.gfa_guider.curve_fit",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("fit fail")),
     )
 
@@ -411,12 +413,11 @@ def test_cal_seeing_curve_fit_failure_returns_nan(tmp_path, monkeypatch):
 # -------------------------
 # exe_cal early error branches
 # -------------------------
-def test_exe_cal_missing_dirs_returns_nan(tmp_path, monkeypatch):
+def test_exe_cal_missing_dirs_returns_nan(tmp_path):
     cfgp = tmp_path / "cfg.json"
     _write_config(cfgp, tmp_path)
     g = GFAGuider(config=str(cfgp))
 
-    # dir path 없다고 강제로
     g.final_astrometry_dir = ""
     g.processed_dir = ""
 
@@ -429,13 +430,12 @@ def test_exe_cal_no_astro_files_returns_nan(tmp_path, monkeypatch):
     _write_config(cfgp, tmp_path)
     g = GFAGuider(config=str(cfgp))
 
-    # astro는 없음, proc는 있음처럼
     def fake_glob(pattern):
         if "final" in pattern:
             return []
         return ["x.fits"]
 
-    monkeypatch.setattr("gfa_guider.glob.glob", fake_glob)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_guider.glob.glob", fake_glob)
 
     fdx, fdy, fwhm = g.exe_cal()
     assert math.isnan(fdx) and math.isnan(fdy) and math.isnan(fwhm)
@@ -451,15 +451,13 @@ def test_exe_cal_no_proc_files_returns_nan(tmp_path, monkeypatch):
             return ["a.fits"]
         return []
 
-    monkeypatch.setattr("gfa_guider.glob.glob", fake_glob)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_guider.glob.glob", fake_glob)
 
     fdx, fdy, fwhm = g.exe_cal()
     assert math.isnan(fdx) and math.isnan(fdy) and math.isnan(fwhm)
 
 
-def test_exe_cal_raises_runtimeerror_on_pair_processing_exception(
-    tmp_path, monkeypatch
-):
+def test_exe_cal_raises_runtimeerror_on_pair_processing_exception(tmp_path, monkeypatch):
     """
     for-loop 내부 예외 -> RuntimeError로 재raise 되는 분기
     """
@@ -484,9 +482,8 @@ def test_exe_cal_raises_runtimeerror_on_pair_processing_exception(
             return [str(p1)]
         return []
 
-    monkeypatch.setattr("gfa_guider.glob.glob", fake_glob)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_guider.glob.glob", fake_glob)
 
-    # load_image_and_wcs에서 예외 터뜨리기
     monkeypatch.setattr(
         g, "load_image_and_wcs", lambda p: (_ for _ in ()).throw(RuntimeError("boom"))
     )
@@ -541,7 +538,7 @@ def test_exe_cal_minimal_pipeline_success(tmp_path, monkeypatch):
             return [str(p1), str(p2)]
         return []
 
-    monkeypatch.setattr("gfa_guider.glob.glob", fake_glob)
+    monkeypatch.setattr("kspec_gfa_controller.gfa_guider.glob.glob", fake_glob)
 
     class FakeWCS:
         pass

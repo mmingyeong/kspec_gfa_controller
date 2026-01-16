@@ -1,11 +1,10 @@
 # tests/test_gfa_logger.py
 import logging
-import os
 from datetime import datetime
 
 import pytest
 
-from gfa_logger import GFALogger
+from kspec_gfa_controller.gfa_logger import GFALogger
 
 
 @pytest.fixture(autouse=True)
