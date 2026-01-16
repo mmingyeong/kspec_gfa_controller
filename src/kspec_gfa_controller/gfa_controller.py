@@ -331,19 +331,6 @@ class GFAController:
                 dec=dec,
             )
 
-            # ---- PNG save (quick-look) ----
-            png_dir = "./png"
-            Path(png_dir).mkdir(parents=True, exist_ok=True)
-
-            png_filename = filename.replace(".fits", ".png")
-
-            self.img_class.save_png(
-                image_array=img,
-                filename=png_filename,
-                output_directory=png_dir,
-                #bit_depth=16,      # GFA dynamic range 유지
-            )
-
             return img
 
         except genicam.TimeoutException:
