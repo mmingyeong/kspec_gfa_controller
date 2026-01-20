@@ -301,7 +301,7 @@ class GFAAstrometry:
         input_command = (
             f"{solve_field_path} --cpulimit {cpu_limit} --dir {self.temp_dir} --scale-units degwidth "
             f"--scale-low {scale_low} --scale-high {scale_high} "
-            f"--no-verify --no-plots --crpix-center -O --ra {ra_in} --dec {dec_in} --radius {radius} {input_file_path}"
+            f"--no-verify --no-plots --crpix-center -O --ra {ra_in} --dec {dec_in} --radius {radius} {input_file_path} -c 0.1 -E 2"
         )
 
         self.logger.debug(f"Running command: {input_command}")
