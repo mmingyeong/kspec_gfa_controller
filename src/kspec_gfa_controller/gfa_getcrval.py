@@ -25,18 +25,55 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from astropy.io import fits
 
-# Optional reuse from gfa_astrometry.py (config path / logger)
-try:
-    from .gfa_astrometry import _get_default_config_path, _get_default_logger
-except Exception:
-    _get_default_config_path = None
-    _get_default_logger = None
+# -----------------------------------------------------------------------------
+# ✅ Always use GFALogger only (file + stream configured in one place)
+# -----------------------------------------------------------------------------
+from .gfa_logger import GFALogger
+from .gfa_astrometry import _get_default_config_path  # config only (no logger)
 
+# GFALogger wrapper + the real logging.Logger underneath
+_gfa_logger = GFALogger(__file__)
+BASE_LOGGER: logging.Logger = _gfa_logger.logger
 
 # -----------------------------------------------------------------------------
 # ✅ FORCE solve-field path (ignore conda PATH/which)
 # -----------------------------------------------------------------------------
 DEFAULT_SOLVE_FIELD = "/home/yyoon/astrometry/bin/solve-field"
+
+
+# ----------------------------
+# Logging helpers
+# ----------------------------
+class _JobAdapter(logging.LoggerAdapter):
+    """
+    Adds per-job context to log records.
+    Usage: lg = _JobAdapter(BASE_LOGGER, {"job": "abc123", "image": "foo.fits"})
+    """
+    def process(self, msg, kwargs):
+        extra = kwargs.get("extra", {})
+        extra = {**self.extra, **extra}
+        kwargs["extra"] = extra
+        return msg, kwargs
+
+
+def _get_logger(logger_in: Optional[Union[logging.Logger, GFALogger]]) -> logging.Logger:
+    """
+    Return a logger, but always anchored to GFALogger.
+
+    - If caller passes a logging.Logger: use it (assumed already configured)
+    - If caller passes GFALogger: use its .logger
+    - If caller passes None: use this module's GFALogger-backed BASE_LOGGER
+
+    IMPORTANT: We DO NOT add handlers here. Handler management is GFALogger's job only.
+    """
+    if logger_in is None:
+        return BASE_LOGGER
+
+    if isinstance(logger_in, GFALogger):
+        return logger_in.logger
+
+    # assume it's a standard logging.Logger
+    return logger_in
 
 
 def _get_solve_field_path(lg: logging.Logger, env: Optional[dict] = None) -> str:
@@ -63,81 +100,12 @@ def _get_solve_field_path(lg: logging.Logger, env: Optional[dict] = None) -> str
     return str(sp)
 
 
-# ----------------------------
-# Logging helpers
-# ----------------------------
-class _JobAdapter(logging.LoggerAdapter):
-    """
-    Adds per-job context to log records.
-    Usage: lg = _JobAdapter(base_logger, {"job": "abc123", "image": "foo.fits"})
-    """
-    def process(self, msg, kwargs):
-        extra = kwargs.get("extra", {})
-        extra = {**self.extra, **extra}
-        kwargs["extra"] = extra
-        return msg, kwargs
-
-
-def _ensure_logger_has_handler(lg: logging.Logger) -> None:
-    """
-    Ensure the logger has at least one StreamHandler, and does not duplicate handlers.
-    """
-    if lg.handlers:
-        return
-
-    lg.setLevel(logging.INFO)  # default; can be overridden by user code
-
-    h = logging.StreamHandler()
-    fmt = (
-        "[%(asctime)s] %(levelname)s "
-        "(%(name)s) "
-        "[job=%(job)s image=%(image)s] "
-        "%(message)s"
-    )
-    h.setFormatter(logging.Formatter(fmt))
-    lg.addHandler(h)
-
-    # Provide default values so formatting won't crash if adapter not used somewhere
-    old_factory = logging.getLogRecordFactory()
-
-    def record_factory(*args, **kwargs):
-        record = old_factory(*args, **kwargs)
-        if not hasattr(record, "job"):
-            record.job = "-"
-        if not hasattr(record, "image"):
-            record.image = "-"
-        return record
-
-    logging.setLogRecordFactory(record_factory)
-
-
-def _get_logger(logger: Optional[logging.Logger]) -> logging.Logger:
-    if logger is not None:
-        _ensure_logger_has_handler(logger)
-        return logger
-
-    if _get_default_logger is not None:
-        lg = _get_default_logger()
-        _ensure_logger_has_handler(lg)
-        return lg
-
-    lg = logging.getLogger("gfa_getcrval")
-    _ensure_logger_has_handler(lg)
-    return lg
-
-
 def _load_config(config: Optional[Union[str, Path]], lg: logging.Logger) -> dict:
     """
     Load JSON config.
-    If config is None and gfa_astrometry._get_default_config_path exists, use it.
-    Otherwise, raise ValueError.
+    If config is None, use gfa_astrometry._get_default_config_path().
     """
     if config is None:
-        if _get_default_config_path is None:
-            raise ValueError(
-                "config is None but gfa_astrometry._get_default_config_path is not available. "
-                "Please pass config path explicitly."
-            )
         config = _get_default_config_path()
 
     config = Path(str(config))
@@ -149,7 +117,6 @@ def _load_config(config: Optional[Union[str, Path]], lg: logging.Logger) -> dict
     with config.open("r") as f:
         cfg = json.load(f)
 
-    # Helpful: log key fields at INFO, full config at DEBUG (careful if secrets exist)
     try:
         ast = cfg.get("astrometry", {})
         cpu = cfg.get("settings", {}).get("cpu", {})
@@ -169,7 +136,6 @@ def _load_config(config: Optional[Union[str, Path]], lg: logging.Logger) -> dict
 def _read_ra_dec(image_path: Union[str, Path], lg: logging.Logger) -> Tuple[str, str]:
     """
     Read RA/DEC from FITS header.
-    Raises KeyError / ValueError if missing.
     """
     image_path = Path(image_path)
     lg.debug("Reading FITS header RA/DEC from: %s", image_path)
@@ -181,12 +147,10 @@ def _read_ra_dec(image_path: Union[str, Path], lg: logging.Logger) -> Tuple[str,
     dec = hdr.get("DEC", None)
 
     if ra is None or dec is None:
-        # log which keys exist to help debugging
         sample_keys = list(hdr.keys())[:50]
         lg.error("RA/DEC missing in header. First 50 header keys: %s", sample_keys)
         raise ValueError(f"RA/DEC is None in header: {image_path}")
 
-    # Keep as strings for solve-field
     try:
         ra_s = str(ra).strip()
         dec_s = str(dec).strip()
@@ -219,6 +183,8 @@ def _run_solve_field(
 ) -> None:
     """
     Run solve-field with rich logging and good error reporting.
+
+    NOTE: stdout/stderr are logged at INFO so they also go to the GFALogger file.
     """
     lg.debug("Executing solve-field command:\n%s", cmd)
 
@@ -229,9 +195,9 @@ def _run_solve_field(
             shell=True,
             capture_output=True,
             text=True,
-            check=False,      # we handle returncode ourselves for better logs
-            timeout=timeout,  # optional
-            env=env,          # ✅ allow caller to control runtime env
+            check=False,
+            timeout=timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired as e:
         dt = time.perf_counter() - t0
@@ -250,25 +216,22 @@ def _run_solve_field(
     lg.info("solve-field finished: rc=%s elapsed=%.3fs", proc.returncode, dt)
 
     if proc.stdout:
-        lg.debug("solve-field stdout:\n%s", proc.stdout)
+        lg.info("solve-field stdout:\n%s", proc.stdout)
     if proc.stderr:
-        lg.debug("solve-field stderr:\n%s", proc.stderr)
+        lg.info("solve-field stderr:\n%s", proc.stderr)
 
     if proc.returncode != 0:
-        lg.error("solve-field failed (rc=%s). See stderr below.", proc.returncode)
-        if proc.stderr:
-            lg.error("stderr:\n%s", proc.stderr)
+        lg.error("solve-field failed (rc=%s). See stderr above.", proc.returncode)
         raise RuntimeError(f"solve-field failed with return code {proc.returncode}")
 
 
 def _find_solved_new_file(image_path: Path, work_dir: Path, lg: logging.Logger) -> Path:
     """
     Find .new output produced by solve-field.
-    Logs all patterns tried and directory contents upon failure.
     """
     base = image_path.name
 
-    patterns = []
+    patterns: List[str] = []
     if base.lower().endswith(".fits"):
         patterns.append(str(work_dir / (base[:-5] + ".new")))
     elif base.lower().endswith(".fit"):
@@ -305,20 +268,16 @@ def _find_solved_new_file(image_path: Path, work_dir: Path, lg: logging.Logger) 
 def get_crval_from_image(
     image_path: Union[str, Path],
     config: Optional[Union[str, Path]] = None,
-    logger: Optional[logging.Logger] = None,
+    logger: Optional[Union[logging.Logger, GFALogger]] = None,
     work_dir: Optional[Union[str, Path]] = None,
     keep_work_dir: bool = False,
     solve_field: Optional[Union[str, Path]] = None,
     subprocess_env: Optional[dict] = None,
 ) -> Tuple[float, float]:
     """
-    Pointing-oriented function:
     Given a FITS image (with RA/DEC in header), run solve-field and return (CRVAL1, CRVAL2).
 
-    - solve_field: optional explicit path (overrides everything)
-    - subprocess_env: optional env for subprocess.run (if None, uses os.environ.copy()).
-                     NOTE: even if you pass env, solve-field path is still forced unless
-                     you override with solve_field or ASTROMETRY_SOLVE_FIELD env var.
+    This module logs ONLY through GFALogger-backed loggers.
     """
     base_logger = _get_logger(logger)
 
@@ -339,10 +298,8 @@ def get_crval_from_image(
         lg.error("Input FITS does not exist: %s", image_path)
         raise FileNotFoundError(f"Input FITS not found: {image_path}")
 
-    # env for subprocess
     env = subprocess_env if subprocess_env is not None else os.environ.copy()
 
-    # ✅ choose solve-field path (fixed by default)
     if solve_field is not None:
         sf = Path(str(solve_field))
         if not sf.exists():
@@ -354,13 +311,9 @@ def get_crval_from_image(
     else:
         solve_field_path = _get_solve_field_path(lg, env=env)
 
-    # Load config for astrometry parameters
     inpar = _load_config(config, lg)
-
-    # Read RA/DEC from header
     ra_in, dec_in = _read_ra_dec(image_path, lg)
 
-    # Work dir
     tmp_created = False
     if work_dir is None:
         work_dir = Path(tempfile.mkdtemp(prefix="gfa_getcrval_"))
@@ -373,7 +326,6 @@ def get_crval_from_image(
 
     t_all0 = time.perf_counter()
     try:
-        # Parameters
         try:
             scale_low, scale_high = inpar["astrometry"]["scale_range"]
             radius = inpar["astrometry"]["radius"]
@@ -392,7 +344,6 @@ def get_crval_from_image(
             cpu_limit,
         )
 
-        # Build command
         cmd = (
             f"{solve_field_path} "
             f"--cpulimit {cpu_limit} "
@@ -434,9 +385,7 @@ def get_crval_from_image(
 
         if not keep_work_dir:
             try:
-                lg.info(
-                    "Cleaning up work_dir: %s (tmp_created=%s)", work_dir, tmp_created
-                )
+                lg.info("Cleaning up work_dir: %s (tmp_created=%s)", work_dir, tmp_created)
                 shutil.rmtree(str(work_dir), ignore_errors=True)
             except Exception:
                 lg.exception("Failed to remove work_dir: %s", work_dir)
@@ -447,7 +396,7 @@ def get_crval_from_image(
 def get_crvals_from_images(
     image_paths: List[Union[str, Path]],
     config: Optional[Union[str, Path]] = None,
-    logger: Optional[logging.Logger] = None,
+    logger: Optional[Union[logging.Logger, GFALogger]] = None,
     max_workers: int = 4,
     keep_work_dir: bool = False,
     solve_field: Optional[Union[str, Path]] = None,
@@ -484,7 +433,7 @@ def get_crvals_from_images(
         c1, c2 = get_crval_from_image(
             p,
             config=config,
-            logger=base_logger,
+            logger=base_logger,          # keep same GFALogger-backed logger
             work_dir=None,
             keep_work_dir=keep_work_dir,
             solve_field=solve_field,
@@ -510,11 +459,3 @@ def get_crvals_from_images(
     lg.info("End get_crvals_from_images: ok=%s/%s elapsed=%.3fs", ok, n, dt)
 
     return cr1, cr2
-
-
-# Optional: quick CLI-style debug run
-# if __name__ == "__main__":
-#     import sys
-#     logging.getLogger("gfa_getcrval").setLevel(logging.DEBUG)
-#     c1, c2 = get_crval_from_image(sys.argv[1], config=sys.argv[2] if len(sys.argv) > 2 else None)
-#     print(c1, c2)

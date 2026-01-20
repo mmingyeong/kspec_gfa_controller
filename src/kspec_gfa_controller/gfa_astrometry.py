@@ -295,13 +295,24 @@ class GFAAstrometry:
             raise FileNotFoundError(
                 f"Input file for solve-field not found: {input_file_path}"
             )
-        print("ra_in?????????, dec_in?????????????")
-        print(ra_in, dec_in)
+
         # This is the actual system command => debug
+        #input_command = (
+        #    f"{solve_field_path} --cpulimit {cpu_limit} --dir {self.temp_dir} --scale-units degwidth "
+        #    f"--scale-low {scale_low} --scale-high {scale_high} "
+        #    f"--no-verify --no-plots --crpix-center -O --ra {ra_in} --dec {dec_in} --radius {radius} {input_file_path} -c 0.1 -E 2"
+        #)
+
+        # solve-field command (NEW FORMAT)
         input_command = (
-            f"{solve_field_path} --cpulimit {cpu_limit} --dir {self.temp_dir} --scale-units degwidth "
-            f"--scale-low {scale_low} --scale-high {scale_high} "
-            f"--no-verify --no-plots --crpix-center -O --ra {ra_in} --dec {dec_in} --radius {radius} {input_file_path}"
+            f"{solve_field_path} {input_file_path} "
+            #f"--cpulimit {cpu_limit}"
+            f"-D {self.temp_dir} "
+            f"-O --no-plots --no-verify --crpix-center "
+            f"-X X -Y Y -s FLUX "
+            f"--scale-units degwidth -L {scale_low} -H {scale_high} "
+            f'--ra "{ra_in}" --dec "{dec_in}" --radius {radius} '
+            f"-l 120 -c 0.1 -E 2"
         )
 
         self.logger.debug(f"Running command: {input_command}")

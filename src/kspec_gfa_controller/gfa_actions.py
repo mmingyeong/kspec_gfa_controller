@@ -30,7 +30,6 @@ def _make_clean_subprocess_env() -> dict:
     env["PATH"] = pybin + os.pathsep + env.get("PATH", "")
     return env
 
-
 class GFAActions:
     """
     GFA actions: grab, guiding, pointing, camera status utilities.
@@ -57,10 +56,14 @@ class GFAActions:
         cam_ftd_base: int = 0,
         ra: str = None,
         dec: str = None,
+        path: str = None
     ) -> Dict[str, Any]:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         date_str = datetime.now().strftime("%Y-%m-%d")
-        grab_save_path = os.path.join(base_dir, "img", "grab", date_str)
+        if path:
+            grab_save_path = path
+        else:
+            grab_save_path = os.path.join(base_dir, "img", "grab", date_str)
         os.makedirs(grab_save_path, exist_ok=True)
 
         timeout_cameras: List[int] = []
@@ -199,7 +202,7 @@ class GFAActions:
             self.env.logger.info("Executing guider offset calculation...")
             fdx, fdy, fwhm = self.env.guider.exe_cal()
             
-            self.env.astrometry.clear_raw_and_processed_files()
+            #self.env.astrometry.clear_raw_and_processed_files()
 
             try:
                 fwhm_val = float(fwhm)
@@ -383,11 +386,11 @@ class GFAActions:
             self.env.logger.info("Starting pointing sequence...")
             self.env.logger.info(f"Target RA/DEC: {ra}, {dec}")
 
-            #if clear_dir:
-            #    for fn in os.listdir(pointing_raw_path):
-            #        fp = os.path.join(pointing_raw_path, fn)
-            #        if os.path.isfile(fp):
-            #            os.remove(fp)
+            if clear_dir:
+                for fn in os.listdir(pointing_raw_path):
+                    fp = os.path.join(pointing_raw_path, fn)
+                    if os.path.isfile(fp):
+                        os.remove(fp)
 
             # --- camera open/grab/close ---
             await self.env.controller.open_all_cameras()
@@ -403,22 +406,22 @@ class GFAActions:
                 except Exception as e:
                     self.env.logger.warning(f"close_all_cameras failed: {e}")
 
-            #images = [
-            #    os.path.join(pointing_raw_path, fn)
-            #    for fn in sorted(os.listdir(pointing_raw_path))
-            #    if fn.lower().endswith((".fits", ".fit", ".fts"))
-            #]
-            #if not images:
-            #    msg = f"No FITS images found in {pointing_raw_path}"
-            #    self.env.logger.error(msg)
-            #    return self._generate_response(
-            #        "error", msg, images=[], crval1=[], crval2=[]
-            #    )
+            images = [
+                os.path.join(pointing_raw_path, fn)
+                for fn in sorted(os.listdir(pointing_raw_path))
+                if fn.lower().endswith((".fits", ".fit", ".fts"))
+            ]
+            if not images:
+                msg = f"No FITS images found in {pointing_raw_path}"
+                self.env.logger.error(msg)
+                return self._generate_response(
+                    "error", msg, images=[], crval1=[], crval2=[]
+                )
 
             # --- apply the same "clean env" fix BEFORE any solve-field runs ---
-            #clean_env = _make_clean_subprocess_env()
-            #if hasattr(self.env.astrometry, "set_subprocess_env"):
-            #    self.env.astrometry.set_subprocess_env(clean_env)
+            clean_env = _make_clean_subprocess_env()
+            if hasattr(self.env.astrometry, "set_subprocess_env"):
+                self.env.astrometry.set_subprocess_env(clean_env)
 
             #self.env.logger.info(f"Found {len(images)} images for pointing.")
             self.env.logger.info(
@@ -448,6 +451,7 @@ class GFAActions:
         except Exception as e:
             self.env.logger.error(f"Pointing failed: {str(e)}")
             return self._generate_response("error", f"Pointing failed: {str(e)}")
+
 
     def status(self) -> Dict[str, Any]:
         try:

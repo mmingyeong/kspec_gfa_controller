@@ -246,6 +246,8 @@ class GFAController:
         self.logger.info("=========================")
 
         info_attributes = [
+            ("GainRaw", "GainRaw"),
+            ("Gain", "Gain"),
             ("DeviceModelName", "DeviceModelName"),
             ("DeviceSerialNumber", "DeviceSerialNumber"),
             ("DeviceUserID", "DeviceUserID"),
@@ -307,6 +309,7 @@ class GFAController:
         await loop.run_in_executor(None, cam.PixelFormat.SetValue, "Mono12")
         await loop.run_in_executor(None, cam.BinningHorizontal.SetValue, int(Binning))
         await loop.run_in_executor(None, cam.BinningVertical.SetValue, int(Binning))
+        await loop.run_in_executor(None, cam.Gain.SetValue, 0)
 
         try:
             result = await loop.run_in_executor(None, cam.GrabOne, self.grab_timeout)
