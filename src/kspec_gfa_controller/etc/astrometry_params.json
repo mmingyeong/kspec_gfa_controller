@@ -8,12 +8,12 @@
             "offset_astrometry_images": "img/astroimg/",
             "offset_processed_images": "img/procimg",
             "cutout_directory": "img/cutout",
-            "star_catalog": "img/combined_star.fits"
+            "star_catalog": "img/star_catalog"
         }
     },
     "settings": {
         "cpu": {
-            "limit": 6
+            "limit": 120
         },
         "image_processing": {
             "skycoord": {

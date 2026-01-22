@@ -40,6 +40,11 @@ BASE_LOGGER: logging.Logger = _gfa_logger.logger
 # -----------------------------------------------------------------------------
 DEFAULT_SOLVE_FIELD = "/home/yyoon/astrometry/bin/solve-field"
 
+# -----------------------------------------------------------------------------
+# ✅ Default persistent result root
+# -----------------------------------------------------------------------------
+DEFAULT_RES_ROOT = Path("~/work/pointing_astrometry_res").expanduser()
+
 
 # ----------------------------
 # Logging helpers
@@ -278,6 +283,10 @@ def get_crval_from_image(
     Given a FITS image (with RA/DEC in header), run solve-field and return (CRVAL1, CRVAL2).
 
     This module logs ONLY through GFALogger-backed loggers.
+
+    NOTE:
+    - If work_dir is None, results are stored under DEFAULT_RES_ROOT (persistent).
+    - We keep those results by default (even if keep_work_dir=False), so outputs remain.
     """
     base_logger = _get_logger(logger)
 
@@ -316,9 +325,17 @@ def get_crval_from_image(
 
     tmp_created = False
     if work_dir is None:
-        work_dir = Path(tempfile.mkdtemp(prefix="gfa_getcrval_"))
-        tmp_created = True
-        lg.info("Created temp work_dir: %s", work_dir)
+        # ✅ persistent root for all astrometry outputs
+        res_root = DEFAULT_RES_ROOT
+        res_root.mkdir(parents=True, exist_ok=True)
+
+        # ✅ avoid collisions under parallel runs: make a per-image, per-job subdir
+        safe_stem = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in image_path.stem)
+        work_dir = res_root / f"{job_id}_{safe_stem}"
+        work_dir.mkdir(parents=True, exist_ok=True)
+
+        tmp_created = True  # meaning: auto-created by this function
+        lg.info("Created persistent work_dir under res_root: %s", work_dir)
     else:
         work_dir = Path(work_dir)
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -346,12 +363,13 @@ def get_crval_from_image(
 
         cmd = (
             f"{solve_field_path} "
-            f"--cpulimit {cpu_limit} "
-            f"--dir {str(work_dir)} "
-            f"--scale-units degwidth --scale-low {scale_low} --scale-high {scale_high} "
-            f"--no-verify --no-plots --crpix-center -O "
-            f"--ra {ra_in} --dec {dec_in} --radius {radius} "
-            f"{str(image_path)}"
+            f"{str(image_path)} "
+            f"-D {str(work_dir)} "
+            f"-O --no-plots --no-verify --crpix-center "
+            f"-X X -Y Y -s FLUX "
+            f"--scale-units degwidth -L {scale_low} -H {scale_high} "
+            f'--ra "{ra_in}" --dec "{dec_in}" --radius {radius} '
+            f"-l 120 -c 0.1 -E 2"
         )
 
         lg.info("Running solve-field")
@@ -383,7 +401,9 @@ def get_crval_from_image(
         dt_all = time.perf_counter() - t_all0
         lg.info("End get_crval_from_image (elapsed=%.3fs)", dt_all)
 
-        if not keep_work_dir:
+        # ✅ Keep persistent outputs under DEFAULT_RES_ROOT by default.
+        # Only delete when the caller explicitly provided a work_dir AND keep_work_dir=False.
+        if (not keep_work_dir) and (not tmp_created):
             try:
                 lg.info("Cleaning up work_dir: %s (tmp_created=%s)", work_dir, tmp_created)
                 shutil.rmtree(str(work_dir), ignore_errors=True)
@@ -434,7 +454,7 @@ def get_crvals_from_images(
             p,
             config=config,
             logger=base_logger,          # keep same GFALogger-backed logger
-            work_dir=None,
+            work_dir=None,              # ✅ persistent DEFAULT_RES_ROOT used
             keep_work_dir=keep_work_dir,
             solve_field=solve_field,
             subprocess_env=subprocess_env,
