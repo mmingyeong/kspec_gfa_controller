@@ -14,20 +14,24 @@ from kspec_gfa_controller.gfa_astrometry import GFAAstrometry, _get_default_logg
 # -------------------------
 # Helpers
 # -------------------------
+# -------------------------
+# Helpers
+# -------------------------
 def _patch_solve_field_ok(monkeypatch, fake_path="/tmp/fake/solve-field"):
     """
-    최신 소스는 shutil.which가 아니라 _get_solve_field_path(Path.exists, os.access)를 씀.
-    그래서 DEFAULT_SOLVE_FIELD / env / Path.exists / os.access를 패치해서 통과시키는 게 핵심.
+    Windows에서는 '/tmp/..'가 Path로 변환되면 'C:\\tmp\\..' 처럼 정규화되므로
+    str 비교가 깨짐. Path 객체끼리 비교하도록 수정.
     """
-    # DEFAULT_SOLVE_FIELD가 있으면 그걸 fake로 바꿈
     if hasattr(gfa_astrometry, "DEFAULT_SOLVE_FIELD"):
         monkeypatch.setattr(gfa_astrometry, "DEFAULT_SOLVE_FIELD", fake_path)
 
-    # Path.exists: fake solve-field만 True
+    fake_sp = gfa_astrometry.Path(fake_path)
+
     real_exists = gfa_astrometry.Path.exists
 
     def fake_exists(self):
-        if str(self) == str(fake_path):
+        # ✅ 핵심: Path 객체 비교(플랫폼별 경로표현 차이 흡수)
+        if self == fake_sp:
             return True
         return real_exists(self)
 
@@ -36,7 +40,7 @@ def _patch_solve_field_ok(monkeypatch, fake_path="/tmp/fake/solve-field"):
     # 실행권한 체크 통과
     monkeypatch.setattr(gfa_astrometry.os, "access", lambda p, mode: True, raising=True)
 
-    # 혹시 env 경로를 타면 그쪽도 맞춰줌
+    # env 경로도 맞춰줌
     monkeypatch.setenv("ASTROMETRY_SOLVE_FIELD", fake_path)
 
 
@@ -44,9 +48,19 @@ def _patch_solve_field_missing(monkeypatch, fake_path="/tmp/fake/solve-field"):
     if hasattr(gfa_astrometry, "DEFAULT_SOLVE_FIELD"):
         monkeypatch.setattr(gfa_astrometry, "DEFAULT_SOLVE_FIELD", fake_path)
 
-    # Path.exists가 항상 False면 solve-field not found
-    monkeypatch.setattr(gfa_astrometry.Path, "exists", lambda self: False, raising=True)
+    fake_sp = gfa_astrometry.Path(fake_path)
+
+    real_exists = gfa_astrometry.Path.exists
+
+    def fake_exists(self):
+        # ✅ 지정한 fake solve-field만 "없음" 처리
+        if self == fake_sp:
+            return False
+        return real_exists(self)
+
+    monkeypatch.setattr(gfa_astrometry.Path, "exists", fake_exists, raising=True)
     monkeypatch.setenv("ASTROMETRY_SOLVE_FIELD", fake_path)
+
 
 
 def _write_config(path: Path, tmp_path: Path):
