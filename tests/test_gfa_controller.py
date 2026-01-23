@@ -70,6 +70,10 @@ class FakeLogger:
     def debug(self, m):
         self.msg.append(("debug", str(m)))
 
+    # ✅ open_all_cameras에서 logger.exception()을 씀
+    def exception(self, m):
+        self.msg.append(("exception", str(m)))
+
 
 # -------------------------
 # Fakes: pypylon/genicam + camera nodes
@@ -103,9 +107,10 @@ class FakeGrabResult:
 
 
 class FakeInstantCamera:
-    def __init__(self, _device, *, open_state=False, raise_timeout=False):
+    def __init__(self, _device, *, open_state=False, raise_timeout=False, raise_on_open=False):
         self._open = open_state
         self._raise_timeout = raise_timeout
+        self._raise_on_open = raise_on_open
 
         # nodes used by configure_and_grab
         self.GevSCPSPacketSize = FakeNode()
@@ -133,6 +138,8 @@ class FakeInstantCamera:
         self.BinningVertical = FakeNode(1, raise_on_get=True)  # except branch cover
 
     def Open(self):
+        if self._raise_on_open:
+            raise RuntimeError("open failed")
         self._open = True
 
     def Close(self):
@@ -161,7 +168,8 @@ class FakeTlFactory:
         return FakeTlFactory()
 
     def CreateDevice(self, dev_info):
-        return object()
+        # ✅ open_all_cameras/open_camera 테스트에서 IP로 분기하려면 dev_info를 그대로 넘기는 게 편함
+        return dev_info
 
 
 # -------------------------
@@ -195,14 +203,11 @@ def gc_module(monkeypatch):
         def save_fits(self, **kwargs):
             self.save_fits_calls.append(kwargs)
 
-
-
     gfa_img_mod.GFAImage = FakeGFAImage
     monkeypatch.setitem(sys.modules, "kspec_gfa_controller.gfa_img", gfa_img_mod)
 
     # ✅ 패키지 경로로 import
     import kspec_gfa_controller.gfa_controller as gfa_controller
-
     importlib.reload(gfa_controller)
     return gfa_controller
 
@@ -308,21 +313,17 @@ async def test_close_all_cameras_closes_and_clears(controller):
 
     controller.open_cameras = {"Cam1": cam1, "Cam2": cam2}
 
-    # precondition
     assert cam1.IsOpen() is True
     assert cam2.IsOpen() is True
-    assert "Cam1" in controller.open_cameras and "Cam2" in controller.open_cameras
 
-    # ✅ async 호출은 반드시 await
     await controller.close_all_cameras()
 
-    # postcondition: 카메라 close 되었는지 + dict clear 되었는지
     assert cam1.IsOpen() is False
     assert cam2.IsOpen() is False
     assert controller.open_cameras == {}
 
+
 def test_ping_calls_os_system_with_ip(controller, monkeypatch):
-    # ✅ 패키지 경로로 모듈 전역 심볼 patch
     called = {}
 
     def fake_system(cmd):
@@ -340,6 +341,14 @@ def test_ping_missing_camera_raises(controller):
         controller.ping(CamNum=99)
 
 
+def test_status_reports_open_and_closed(controller):
+    # Cam1 open, Cam2 missing => warning branch
+    controller.open_cameras["Cam1"] = FakeInstantCamera(object(), open_state=True)
+    out = controller.status()
+    assert out["Cam1"] is True
+    assert out["Cam2"] is False
+
+
 # -------------------------
 # cam_params()
 # -------------------------
@@ -355,6 +364,36 @@ def test_cam_params_opens_temporarily_and_returns_params(controller):
     assert params["BinningVertical"] is None  # GetValue 예외 -> None
     assert "Cam1" in controller.open_cameras
     assert controller.open_cameras["Cam1"].IsOpen() is True
+
+
+# -------------------------
+# open_all_cameras()
+# -------------------------
+@pytest.mark.asyncio
+async def test_open_all_cameras_success_opens_all(controller):
+    # 기본 FakeInstantCamera(Open 성공) 사용
+    await controller.open_all_cameras()
+    assert "Cam1" in controller.open_cameras and "Cam2" in controller.open_cameras
+    assert controller.open_cameras["Cam1"].IsOpen() is True
+    assert controller.open_cameras["Cam2"].IsOpen() is True
+
+
+@pytest.mark.asyncio
+async def test_open_all_cameras_failure_raises_runtimeerror(controller, monkeypatch):
+    # Cam2만 Open 실패하도록 py.InstantCamera를 IP 기반으로 분기
+    import kspec_gfa_controller.gfa_controller as real_mod
+
+    def cam_factory(dev_info):
+        # FakeTlFactory.CreateDevice가 dev_info를 그대로 반환하므로 ip를 볼 수 있음
+        if getattr(dev_info, "ip", None) == "2.2.2.2":
+            return FakeInstantCamera(dev_info, open_state=False, raise_on_open=True)
+        return FakeInstantCamera(dev_info, open_state=False, raise_on_open=False)
+
+    monkeypatch.setattr(real_mod.py, "InstantCamera", cam_factory, raising=True)
+
+    with pytest.raises(RuntimeError):
+        await controller.open_all_cameras()
+
 
 
 # -------------------------
@@ -380,7 +419,6 @@ async def test_configure_and_grab_success_saves_fits(controller):
     )
     assert img is not None
 
-    # FITS save called
     assert len(controller.img_class.save_fits_calls) == 1
     fits_call = controller.img_class.save_fits_calls[0]
     assert fits_call["exptime"] == 1.2
@@ -388,7 +426,6 @@ async def test_configure_and_grab_success_saves_fits(controller):
     assert fits_call["ra"] == "1"
     assert fits_call["dec"] == "2"
     assert fits_call["filename"].endswith(".fits")
-
 
 
 @pytest.mark.asyncio
@@ -491,3 +528,47 @@ async def test_grab_builds_cam_list_and_aggregates_timeouts(tmp_path, gc_module)
     assert await c.grab(CamNum=0, ExpTime=1.0, Binning=1) == [1]
     assert await c.grab(CamNum=[2, 1], ExpTime=1.0, Binning=1) == [1]
     assert await c.grab(CamNum=2, ExpTime=1.0, Binning=1) == []
+
+
+# -------------------------
+# open_selected_cameras()
+# -------------------------
+def test_open_selected_cameras_opens_only_missing(controller):
+    cam1 = FakeInstantCamera(object(), open_state=True)
+    controller.open_cameras["Cam1"] = cam1
+
+    controller.open_selected_cameras([1, 2])
+
+    assert controller.open_cameras["Cam1"] is cam1  # 그대로
+    assert "Cam2" in controller.open_cameras
+    assert controller.open_cameras["Cam2"].IsOpen() is True
+
+
+# -------------------------
+# open_camera()
+# -------------------------
+def test_open_camera_already_open_returns(controller):
+    cam1 = FakeInstantCamera(object(), open_state=True)
+    controller.open_cameras["Cam1"] = cam1
+
+    controller.open_camera(1)
+
+    assert controller.open_cameras["Cam1"] is cam1  # 새로 안 바뀜
+
+
+def test_open_camera_missing_config_raises(controller):
+    with pytest.raises(KeyError):
+        controller.open_camera(99)
+
+
+def test_open_camera_open_failure_raises(controller, monkeypatch):
+    # Cam2 open 시 실패하도록 py.InstantCamera 패치
+    import kspec_gfa_controller.gfa_controller as real_mod
+
+    def cam_factory(dev_info):
+        return FakeInstantCamera(dev_info, open_state=False, raise_on_open=True)
+
+    monkeypatch.setattr(real_mod.py, "InstantCamera", cam_factory, raising=True)
+
+    with pytest.raises(Exception):
+        controller.open_camera(2)

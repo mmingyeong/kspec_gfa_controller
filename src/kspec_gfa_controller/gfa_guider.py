@@ -35,7 +35,11 @@ from astropy.wcs import WCS
 from astropy.stats import sigma_clip
 from astropy.utils.exceptions import AstropyWarning
 
-import photutils.detection as pd
+try:
+    import photutils.detection as pd
+except Exception:
+    pd = None  # tests에서 monkeypatch 가능하게 심볼 유지
+
 
 
 ###############################################################################
@@ -308,10 +312,9 @@ class GFAGuider:
             )
             raise FileNotFoundError(f"Star catalog file not found: {star_catalog_path}")
         
-        p = self._resolve_combined_star_path()
-        if os.path.isdir(p):
-            raise IsADirectoryError(f"Expected FITS file but got directory: {p}")
-
+        # star_catalog_path는 FITS 파일이어야 함
+        if os.path.isdir(star_catalog_path):
+            raise IsADirectoryError(f"Expected FITS file but got directory: {star_catalog_path}")
 
         with fits.open(star_catalog_path, memmap=True) as hdul:
             if len(hdul) < 2 or hdul[1].data is None:
@@ -485,6 +488,9 @@ class GFAGuider:
         cutoutn_stack: List[np.ndarray],
         image_data: np.ndarray,
     ) -> Tuple[List[float], List[float], List[float], List[np.ndarray]]:
+
+        if pd is None:
+            raise RuntimeError("photutils is not available (pd is None).")
 
         self.logger.debug("==== Starting centroid offset calculation ====")
         dx, dy, peakc = [], [], []
