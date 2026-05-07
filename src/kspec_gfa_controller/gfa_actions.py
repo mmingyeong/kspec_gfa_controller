@@ -5,13 +5,11 @@ import os
 import asyncio
 import shutil
 from datetime import datetime
-from typing import Union, List, Dict, Any, Optional
+from typing import Union, List, Dict, Any, Optional, Tuple
 from pathlib import Path
-import re
 import glob
+
 from astropy.io import fits
-from pathlib import Path
-from typing import List, Tuple
 
 from .gfa_logger import GFALogger
 from .gfa_environment import create_environment, GFAEnvironment
@@ -42,15 +40,77 @@ class GFAActions:
     GFA actions: grab, guiding, pointing, camera status utilities.
     """
 
-    def __init__(self, env: Optional[GFAEnvironment] = None):
+    def __init__(
+        self,
+        env: Optional[GFAEnvironment] = None,
+        save_root: Optional[str] = None,
+    ):
         if env is None:
-            env = create_environment(role="plate")
+            env = create_environment(
+                role="plate",
+                save_root=save_root,
+            )
         self.env = env
 
     def _generate_response(self, status: str, message: str, **kwargs) -> dict:
         response = {"status": status, "message": message}
         response.update(kwargs)
         return response
+
+    def _get_save_root_and_dirs(self) -> Tuple[Path, Dict[str, Any]]:
+        """
+        Resolve save_root and directory config.
+
+        Priority:
+        1. self.env.save_root
+        2. self.env.astrometry.inpar["paths"]["save_root"]
+        3. ~/work/DATA/GFADATA/img
+        """
+        default_save_root = Path.home() / "work/DATA/GFADATA/img"
+
+        dirs = {}
+        save_root = getattr(self.env, "save_root", None)
+
+        if hasattr(self.env, "astrometry") and self.env.astrometry is not None:
+            inpar = getattr(self.env.astrometry, "inpar", {})
+            paths_cfg = inpar.get("paths", {})
+            dirs = paths_cfg.get("directories", {})
+
+            if save_root is None:
+                save_root = paths_cfg.get("save_root", None)
+
+        save_root = Path(save_root or default_save_root).expanduser().resolve()
+        save_root.mkdir(parents=True, exist_ok=True)
+
+        return save_root, dirs
+
+    def _debug_path_block(self, label: str, paths: Dict[str, Path]) -> None:
+        """
+        Log path information and test write permission.
+        """
+        self.env.logger.info(f"========== PATH DEBUG [{label}] ==========")
+
+        for name, path in paths.items():
+            p = Path(path).expanduser().resolve()
+            self.env.logger.info(f"{name} = {p}")
+            self.env.logger.info(f"type({name}) = {type(path)}")
+
+            try:
+                p.mkdir(parents=True, exist_ok=True)
+                self.env.logger.info(f"{name} exists? {p.exists()}")
+            except Exception as e:
+                self.env.logger.error(f"{name} mkdir failed: {p}, error={e}")
+                continue
+
+            try:
+                test_file = p / "debug_write_test.txt"
+                with open(test_file, "w") as f:
+                    f.write("debug")
+                self.env.logger.info(f"{name} write test ok: {test_file}")
+            except Exception as e:
+                self.env.logger.error(f"{name} write test failed: {p}, error={e}")
+
+        self.env.logger.info("=========================================")
 
     def _apply_clean_env_to_astrometry(self) -> None:
         """
@@ -61,18 +121,17 @@ class GFAActions:
             self.env.astrometry.set_subprocess_env(clean_env)
 
     def _ensure_astrometry_outputs_ready(self) -> List[str]:
-        if not hasattr(self.env, "astrometry"):
+        if not hasattr(self.env, "astrometry") or self.env.astrometry is None:
             raise RuntimeError("env.astrometry is not configured")
 
-        # 새 클래스 메서드 있으면 그 결과(astro_files) 그대로 리턴
         if hasattr(self.env.astrometry, "ensure_astrometry_ready"):
             return self.env.astrometry.ensure_astrometry_ready()
 
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        astro_dir = getattr(self.env.astrometry, "final_astrometry_dir", None) or os.path.join(base_dir, "img", "astroimg")
-        raw_dir = getattr(self.env.astrometry, "dir_path", None) or os.path.join(base_dir, "img", "raw")
+        astro_dir = getattr(self.env.astrometry, "final_astrometry_dir", None)
+        if astro_dir is None:
+            raise RuntimeError("env.astrometry.final_astrometry_dir is not configured")
 
-        astro_files = sorted(glob.glob(os.path.join(astro_dir, "astro_*.fits")))
+        astro_files = sorted(glob.glob(str(Path(astro_dir) / "astro_*.fits")))
         if astro_files:
             return astro_files
 
@@ -83,7 +142,7 @@ class GFAActions:
         if not ok:
             raise RuntimeError("Astrometry preproc failed")
 
-        astro_files = sorted(glob.glob(os.path.join(astro_dir, "astro_*.fits")))
+        astro_files = sorted(glob.glob(str(Path(astro_dir) / "astro_*.fits")))
         if not astro_files:
             raise RuntimeError(f"Astrometry expected outputs not found in {astro_dir} (astro_*.fits)")
 
@@ -100,15 +159,28 @@ class GFAActions:
         cam_ftd_base: int = 0,
         ra: str = None,
         dec: str = None,
-        path: str = None
+        path: str = None,
     ) -> Dict[str, Any]:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
+        save_root, dirs = self._get_save_root_and_dirs()
         date_str = datetime.now().strftime("%Y-%m-%d")
+
         if path:
-            grab_save_path = path
+            grab_save_path = Path(path).expanduser().resolve()
         else:
-            grab_save_path = os.path.join(base_dir, "img", "grab", date_str)
-        os.makedirs(grab_save_path, exist_ok=True)
+            grab_dir = dirs.get("grab_images", "grab")
+            grab_save_path = save_root / grab_dir / date_str
+
+        grab_save_path.mkdir(parents=True, exist_ok=True)
+
+        self.env.logger.info(f"[grab] save_root={save_root}")
+        self.env.logger.info(f"[grab] dirs={dirs}")
+        self._debug_path_block(
+            "grab",
+            {
+                "save_root": save_root,
+                "grab_save_path": grab_save_path,
+            },
+        )
 
         timeout_cameras: List[int] = []
 
@@ -117,11 +189,13 @@ class GFAActions:
 
         try:
             if isinstance(CamNum, int) and CamNum != 0:
+                self.env.logger.info(f"[grab] controller output_dir={str(grab_save_path)}")
+
                 res = await self.env.controller.grabone(
                     CamNum=CamNum,
                     ExpTime=ExpTime,
                     Binning=Binning,
-                    output_dir=grab_save_path,
+                    output_dir=str(grab_save_path),
                     packet_size=packet_size,
                     ipd=cam_ipd,
                     ftd_base=cam_ftd_base,
@@ -133,15 +207,17 @@ class GFAActions:
                 msg = f"Image grabbed from camera {CamNum}."
                 if timeout_cameras:
                     msg += f" Timeout: {timeout_cameras[0]}"
-                return self._generate_response("success", msg)
+                return self._generate_response("success", msg, save_path=str(grab_save_path))
 
             if isinstance(CamNum, int) and CamNum == 0:
+                self.env.logger.info(f"[grab] controller output_dir={str(grab_save_path)}")
+
                 tasks = [
                     self.env.controller.grabone(
                         CamNum=cam_id,
                         ExpTime=ExpTime,
                         Binning=Binning,
-                        output_dir=grab_save_path,
+                        output_dir=str(grab_save_path),
                         packet_size=packet_size,
                         ipd=cam_ipd,
                         ftd_base=cam_ftd_base,
@@ -157,15 +233,17 @@ class GFAActions:
                 msg = "Images grabbed from all cameras."
                 if timeout_cameras:
                     msg += f" Timeout: {timeout_cameras}"
-                return self._generate_response("success", msg)
+                return self._generate_response("success", msg, save_path=str(grab_save_path))
 
             if isinstance(CamNum, list):
+                self.env.logger.info(f"[grab] controller output_dir={str(grab_save_path)}")
+
                 tasks = [
                     self.env.controller.grabone(
                         CamNum=cam_id,
                         ExpTime=ExpTime,
                         Binning=Binning,
-                        output_dir=grab_save_path,
+                        output_dir=str(grab_save_path),
                         packet_size=packet_size,
                         ipd=cam_ipd,
                         ftd_base=cam_ftd_base,
@@ -181,13 +259,13 @@ class GFAActions:
                 msg = f"Images grabbed from cameras {CamNum}."
                 if timeout_cameras:
                     msg += f" Timeout: {timeout_cameras}"
-                return self._generate_response("success", msg)
+                return self._generate_response("success", msg, save_path=str(grab_save_path))
 
             raise ValueError(f"Invalid CamNum: {CamNum}")
 
         except Exception as e:
             self.env.logger.error(f"Grab failed: {e}")
-            return self._generate_response("error", f"Grab failed: {e}")
+            return self._generate_response("error", f"Grab failed: {e}", save_path=str(grab_save_path))
 
         finally:
             self.env.logger.info("Close all plate cameras...")
@@ -196,9 +274,6 @@ class GFAActions:
             except Exception as e:
                 self.env.logger.warning(f"close_all_cameras failed: {e}")
 
-
-    # gfa_actions.py (GFAActions.guiding) - 수정본
-    # 주의: 이 함수 안에서 math를 쓰므로 import 추가 (파일 상단에 이미 있으면 중복 추가 불필요)
     async def guiding(
         self,
         ExpTime: float = 1.0,
@@ -207,13 +282,33 @@ class GFAActions:
         dec: str = None,
     ) -> Dict[str, Any]:
         import math
-        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+        save_root, dirs = self._get_save_root_and_dirs()
         date_str = datetime.now().strftime("%Y-%m-%d")
 
-        raw_save_path = os.path.join(base_dir, "img", "raw")
-        guiding_save_path = os.path.join(base_dir, "img", "guiding_save", date_str)
-        os.makedirs(raw_save_path, exist_ok=True)
-        self.env.logger.info(f"[guiding] save={save}, raw_save_path={raw_save_path}, guiding_save_path={guiding_save_path}")
+        raw_dir = dirs.get("raw_images", "raw")
+        guiding_dir = dirs.get("guiding_save", "guiding_save")
+
+        raw_save_path = save_root / raw_dir
+        guiding_save_path = save_root / guiding_dir / date_str
+
+        raw_save_path.mkdir(parents=True, exist_ok=True)
+        guiding_save_path.mkdir(parents=True, exist_ok=True)
+
+        self.env.logger.info(f"[guiding] save_root={save_root}")
+        self.env.logger.info(f"[guiding] dirs={dirs}")
+        self.env.logger.info(
+            f"[guiding] save={save}, raw_save_path={raw_save_path}, guiding_save_path={guiding_save_path}"
+        )
+
+        self._debug_path_block(
+            "guiding",
+            {
+                "save_root": save_root,
+                "raw_save_path": raw_save_path,
+                "guiding_save_path": guiding_save_path,
+            },
+        )
 
         self.env.astrometry.clear_raw_files()
 
@@ -222,12 +317,16 @@ class GFAActions:
 
             await self.env.controller.open_all_cameras()
             try:
+                self.env.logger.info(f"[guiding] controller output_dir={str(raw_save_path)}")
+
                 await self.env.controller.grab(
-                    0, ExpTime, 4,
-                    output_dir=raw_save_path,
-                    ra=ra, dec=dec
+                    0,
+                    ExpTime,
+                    4,
+                    output_dir=str(raw_save_path),
+                    ra=ra,
+                    dec=dec,
                 )
-                pass
             finally:
                 try:
                     await self.env.controller.close_all_cameras()
@@ -235,27 +334,28 @@ class GFAActions:
                     self.env.logger.warning(f"close_all_cameras failed: {e}")
 
             if save:
-                self.env.logger.info(f"Saving pointing images to {guiding_save_path}")
-                os.makedirs(guiding_save_path, exist_ok=True)
+                self.env.logger.info(f"Saving guiding images to {guiding_save_path}")
 
                 exts = (".fits", ".fit", ".fts")
-                pattern = os.path.join(raw_save_path, "**", "*")
+                pattern = str(raw_save_path / "**" / "*")
                 copied = 0
+
+                try:
+                    self.env.logger.info(f"raw contents: {os.listdir(str(raw_save_path))}")
+                except Exception as e:
+                    self.env.logger.warning(f"Failed to list raw directory: {raw_save_path}, error={e}")
 
                 for src in glob.glob(pattern, recursive=True):
                     if os.path.isfile(src) and src.lower().endswith(exts):
-                        dst = os.path.join(guiding_save_path, os.path.basename(src))
-                        self.env.logger.info(f"raw contents: {os.listdir(raw_save_path)}")
+                        dst = guiding_save_path / os.path.basename(src)
                         self.env.logger.info(f"copying {src} to {dst}")
-                        shutil.copy2(src, dst)
+                        shutil.copy2(src, str(dst))
                         copied += 1
 
                 self.env.logger.info(f"[guiding] saved {copied} fits files to {guiding_save_path}")
 
-            # --- astrometry: clean env 적용 ---
             self._apply_clean_env_to_astrometry()
 
-            # --- procimg 없이: astro dir 있으면 사용 / 없으면 생성 ---
             self.env.logger.info("Ensuring astrometry outputs are ready (no procimg dependency)...")
             astro_files = self._ensure_astrometry_outputs_ready()
             self.env.logger.info(f"Astrometry inputs ready: {len(astro_files)} files.")
@@ -271,7 +371,6 @@ class GFAActions:
                 except Exception:
                     return True
 
-            # ✅ nan이면 warning으로 반환
             if _is_nan(fdx) or _is_nan(fdy) or _is_nan(fwhm):
                 msg = "Guiding completed with WARNING: no reliable guide stars detected."
                 return self._generate_response(
@@ -280,10 +379,11 @@ class GFAActions:
                     fdx=fdx,
                     fdy=fdy,
                     fwhm=fwhm,
+                    raw_path=str(raw_save_path),
+                    save_path=str(guiding_save_path),
                     astrometry_files=[os.path.basename(p) for p in astro_files],
                 )
 
-            # 정상 케이스
             try:
                 fwhm_val = float(fwhm)
             except Exception:
@@ -296,13 +396,19 @@ class GFAActions:
                 fdx=fdx,
                 fdy=fdy,
                 fwhm=fwhm_val,
+                raw_path=str(raw_save_path),
+                save_path=str(guiding_save_path),
                 astrometry_files=[os.path.basename(p) for p in astro_files],
             )
 
         except Exception as e:
             self.env.logger.error(f"Guiding failed: {str(e)}")
-            return self._generate_response("error", f"Guiding failed: {str(e)}")
-
+            return self._generate_response(
+                "error",
+                f"Guiding failed: {str(e)}",
+                raw_path=str(raw_save_path),
+                save_path=str(guiding_save_path),
+            )
 
     async def pointing(
         self,
@@ -314,29 +420,43 @@ class GFAActions:
         save: bool = True,
         clear_dir: bool = True,
     ) -> Dict[str, Any]:
-        from pathlib import Path
-        from astropy.io import fits
-    
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-
-        # ✅ raw는 날짜 폴더 없이 항상 여기만 사용
-        pointing_raw_path = os.path.join(base_dir, "img", "raw")
-        os.makedirs(pointing_raw_path, exist_ok=True)
-
-        # grab 저장(원하면 유지). 날짜 폴더는 grab에만
+        save_root, dirs = self._get_save_root_and_dirs()
         date_str = datetime.now().strftime("%Y-%m-%d")
-        pointing_save_path = os.path.join(base_dir, "img", "pointing_save", date_str)
-        self.env.logger.info(f"[pointing] save={save}, raw_save_path={pointing_raw_path}, pointing_save_path={pointing_save_path}")
+
+        raw_dir = dirs.get("raw_images", "raw")
+        pointing_dir = dirs.get("pointing_save", "pointing_save")
+
+        pointing_raw_path = save_root / raw_dir
+        pointing_save_path = save_root / pointing_dir / date_str
+
+        pointing_raw_path.mkdir(parents=True, exist_ok=True)
+        pointing_save_path.mkdir(parents=True, exist_ok=True)
+
+        self.env.logger.info(f"[pointing] save_root={save_root}")
+        self.env.logger.info(f"[pointing] dirs={dirs}")
+        self.env.logger.info(
+            f"[pointing] save={save}, raw_save_path={pointing_raw_path}, pointing_save_path={pointing_save_path}"
+        )
+
+        self._debug_path_block(
+            "pointing",
+            {
+                "save_root": save_root,
+                "pointing_raw_path": pointing_raw_path,
+                "pointing_save_path": pointing_save_path,
+            },
+        )
 
         def _get_crvals_from_fits(fits_files: List[Path]) -> Tuple[List[float], List[float]]:
             cr1_list, cr2_list = [], []
             for p in fits_files:
                 try:
-                    with fits.open(p) as hdul:
+                    with fits.open(str(p)) as hdul:
                         hdr = hdul[0].header
                         cr1_list.append(float(hdr.get("CRVAL1", float("nan"))))
                         cr2_list.append(float(hdr.get("CRVAL2", float("nan"))))
-                except Exception:
+                except Exception as e:
+                    self.env.logger.warning(f"Failed to read CRVAL from {p}: {e}")
                     cr1_list.append(float("nan"))
                     cr2_list.append(float("nan"))
             return cr1_list, cr2_list
@@ -345,49 +465,50 @@ class GFAActions:
             self.env.logger.info("Starting pointing sequence...")
             self.env.logger.info(f"Target RA/DEC: {ra}, {dec}")
 
-            # ✅ raw 루트에서 FITS만 삭제 (다른 파일은 보호)
-            self.env.astrometry.clear_raw_files()
+            if clear_dir:
+                self.env.astrometry.clear_raw_files()
 
-            # --- camera open/grab/close ---
             await self.env.controller.open_all_cameras()
             try:
-                # ✅ 실제 grab을 raw 루트에 저장하려면 주석 해제
+                self.env.logger.info(f"[pointing] controller output_dir={str(pointing_raw_path)}")
+
                 await self.env.controller.grab(
-                    CamNum, ExpTime, Binning,
-                    output_dir=pointing_raw_path,
-                    ra=ra, dec=dec
+                    CamNum,
+                    ExpTime,
+                    Binning,
+                    output_dir=str(pointing_raw_path),
+                    ra=ra,
+                    dec=dec,
                 )
-                pass
             finally:
                 try:
                     await self.env.controller.close_all_cameras()
                 except Exception as e:
                     self.env.logger.warning(f"close_all_cameras failed: {e}")
 
-            # (옵션) raw -> grab(날짜)로 복사
             if save:
                 self.env.logger.info(f"Saving pointing images to {pointing_save_path}")
-                os.makedirs(pointing_save_path, exist_ok=True)
 
                 exts = (".fits", ".fit", ".fts")
-                pattern = os.path.join(pointing_raw_path, "**", "*")
+                pattern = str(pointing_raw_path / "**" / "*")
                 copied = 0
+
+                try:
+                    self.env.logger.info(f"raw contents: {os.listdir(str(pointing_raw_path))}")
+                except Exception as e:
+                    self.env.logger.warning(f"Failed to list raw directory: {pointing_raw_path}, error={e}")
 
                 for src in glob.glob(pattern, recursive=True):
                     if os.path.isfile(src) and src.lower().endswith(exts):
-                        dst = os.path.join(pointing_save_path, os.path.basename(src))
-                        self.env.logger.info(f"raw contents: {os.listdir(pointing_raw_path)}")
+                        dst = pointing_save_path / os.path.basename(src)
                         self.env.logger.info(f"copying {src} to {dst}")
-                        shutil.copy2(src, dst)
+                        shutil.copy2(src, str(dst))
                         copied += 1
 
-                self.env.logger.info(f"[guiding] saved {copied} fits files to {pointing_save_path}")
+                self.env.logger.info(f"[pointing] saved {copied} fits files to {pointing_save_path}")
 
-
-            # --- clean env 적용 ---
             self._apply_clean_env_to_astrometry()
 
-            # --- astrometry outputs 준비 ---
             self.env.logger.info("Ensuring astrometry outputs are ready (no procimg dependency)...")
             astro_files = self._ensure_astrometry_outputs_ready()
             astro_files = list(astro_files) if astro_files else []
@@ -397,14 +518,20 @@ class GFAActions:
             if not astro_files:
                 msg = "Pointing failed: no astrometry FITS outputs found."
                 self.env.logger.error(msg)
-                return self._generate_response("error", msg, images=[], crval1=[], crval2=[])
+                return self._generate_response(
+                    "error",
+                    msg,
+                    images=[],
+                    crval1=[],
+                    crval2=[],
+                    raw_path=str(pointing_raw_path),
+                    save_path=str(pointing_save_path),
+                )
 
-            # astro_*.fits 기준으로 헤더에서 CRVAL 읽기
             image_list = [Path(p) for p in astro_files]
             image_names = [p.name for p in image_list]
 
             crval1_list, crval2_list = _get_crvals_from_fits(image_list)
-            #self.env.astrometry.clear_raw_files()
 
             msg = f"Pointing completed. Computed CRVALs for {len(image_list)} images."
             return self._generate_response(
@@ -413,12 +540,18 @@ class GFAActions:
                 images=image_names,
                 crval1=crval1_list,
                 crval2=crval2_list,
+                raw_path=str(pointing_raw_path),
+                save_path=str(pointing_save_path),
             )
 
         except Exception as e:
             self.env.logger.error(f"Pointing failed: {str(e)}")
-            return self._generate_response("error", f"Pointing failed: {str(e)}")
-
+            return self._generate_response(
+                "error",
+                f"Pointing failed: {str(e)}",
+                raw_path=str(pointing_raw_path),
+                save_path=str(pointing_save_path),
+            )
 
     def status(self) -> Dict[str, Any]:
         try:
@@ -456,4 +589,3 @@ class GFAActions:
     def shutdown(self) -> None:
         self.env.shutdown()
         self.env.logger.info("GFAActions shutdown complete.")
-s

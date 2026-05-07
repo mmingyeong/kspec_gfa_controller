@@ -1,16 +1,20 @@
 {
     "paths": {
+        "save_root": "~/work/DATA/GFADATA/img",
         "directories": {
-            "raw_images": "img/raw",
-            "processed_images": "img/procimg",
-            "temp_files": "img/tempfiles",
-            "final_astrometry_images": "img/astroimg/",
-            "offset_astrometry_images": "img/astroimg/",
-            "offset_processed_images": "img/procimg",
-            "cutout_directory": "img/cutout",
-            "star_catalog": "img/star_catalog"
+          "raw_images": "raw",
+          "processed_images": "procimg",
+          "temp_files": "tempfiles",
+          "final_astrometry_images": "astroimg",
+          "offset_astrometry_images": "astroimg",
+          "offset_processed_images": "procimg",
+          "cutout_directory": "cutout",
+          "star_catalog": "star_catalog",
+          "grab_images": "grab",
+          "guiding_save": "guiding_save",
+          "pointing_save": "pointing_save"
         }
-    },
+      },
     "settings": {
         "cpu": {
             "limit": 120

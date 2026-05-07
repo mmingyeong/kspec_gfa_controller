@@ -21,7 +21,7 @@
             "Number": 2,
             "ModelName": "a2A5328-4gmPRO",
             "SerialNumber": "40103834",
-            "IpAddress": "192.168.88.2",
+            "IpAddress": "192.168.88.7",
             "SubnetMask": "255.255.255.0",
             "PacketSize": "1500",
             "InterPacketDelay": "64596"

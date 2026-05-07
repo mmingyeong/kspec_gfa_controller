@@ -23,9 +23,7 @@ from typing import Optional, Tuple, List, Union
 import traceback
 
 import re
-import glob
-import os
-from typing import Optional
+from pathlib import Path
 
 import numpy as np
 from scipy.optimize import curve_fit
@@ -88,8 +86,11 @@ class GFAGuider:
     """
 
     def __init__(
-        self, config: Optional[str] = None, logger: Optional[logging.Logger] = None
-    ) -> None:
+        self,
+        config: Optional[str] = None,
+        logger: Optional[logging.Logger] = None,
+        save_root: Optional[Union[str, Path]] = None,
+) -> None:
         if config is None:
             config = _get_default_config_path()
         if logger is None:
@@ -106,34 +107,34 @@ class GFAGuider:
             self.logger.error(f"Error loading JSON file: {exc}")
             raise RuntimeError("Failed to load configuration file.") from exc
 
-        # 1) Directory paths from config
-        base_dir = os.path.abspath(os.path.dirname(__file__))
         dirs = self.inpar["paths"]["directories"]
 
-        self.final_astrometry_dir = os.path.join(base_dir, dirs["final_astrometry_images"])
-        self.cutout_path = os.path.join(base_dir, dirs["cutout_directory"])
+        default_root = self.inpar.get(
+            "paths", {}
+        ).get("save_root", "~/work/DATA/GFADATA/img")
 
-        # ✅ NEW: raw images dir (processed 없이 raw만 사용)
-        # config 키가 raw_images 이면 그걸 쓰고, 혹시 raw가 있으면 fallback
-        raw_key = "raw_images" if "raw_images" in dirs else ("raw" if "raw" in dirs else None)
-        if raw_key is None:
-            raise KeyError(
-                "Config paths.directories에 raw_images (또는 raw) 키가 필요합니다."
-            )
-        self.raw_dir = os.path.join(base_dir, dirs[raw_key])
+        self.save_root = Path(
+            save_root or default_root
+        ).expanduser().resolve()
 
-        # ✅ star_catalog path (dir OR file) - must match astrometry class
-        self.star_catalog_root = os.path.join(base_dir, dirs["star_catalog"])
-
-        self.logger.debug(f"Raw dir       : {self.raw_dir}")
-        self.logger.debug(f"Final astro dir: {self.final_astrometry_dir}")
-        self.logger.debug(f"Cutout dir    : {self.cutout_path}")
-        self.logger.debug(f"Star catalog  : {self.star_catalog_root}")
+        self.final_astrometry_dir = str(self.save_root / dirs["final_astrometry_images"])
+        self.cutout_path = str(self.save_root / dirs["cutout_directory"])
+        self.raw_dir = str(self.save_root / dirs["raw_images"])
+        self.star_catalog_root = str(self.save_root / dirs["star_catalog"])
 
         os.makedirs(self.raw_dir, exist_ok=True)
         os.makedirs(self.final_astrometry_dir, exist_ok=True)
         os.makedirs(self.cutout_path, exist_ok=True)
         os.makedirs(os.path.dirname(self._resolve_combined_star_path()), exist_ok=True)
+
+        self.logger.info("========== PATH DEBUG [guider] ==========")
+        self.logger.info(f"save_root             = {self.save_root}")
+        self.logger.info(f"raw_dir               = {self.raw_dir}")
+        self.logger.info(f"final_astrometry_dir  = {self.final_astrometry_dir}")
+        self.logger.info(f"cutout_path           = {self.cutout_path}")
+        self.logger.info(f"star_catalog_root     = {self.star_catalog_root}")
+        self.logger.info(f"combined_star_path    = {self._resolve_combined_star_path()}")
+        self.logger.info("=========================================")
 
         # 2) Guide star detection / selection parameters
         self.boxsize = self.inpar["detection"]["box_size"]
@@ -206,16 +207,12 @@ class GFAGuider:
     # ✅ NEW: combined_star.fits 경로 해석 (astrometry class와 동일 규칙)
     # ---------------------------------------------------------------------
     def _resolve_combined_star_path(self) -> str:
-        base_dir = os.path.abspath(os.path.dirname(__file__))
-        root = self.inpar["paths"]["directories"]["star_catalog"]
-        root_path = os.path.join(base_dir, root)
+        root_path = Path(self.star_catalog_root)
 
-        # 과거 호환: star_catalog가 combined_star.fits를 직접 가리키면 그대로 사용
-        if root_path.lower().endswith(".fits"):
-            return root_path
+        if str(root_path).lower().endswith(".fits"):
+            return str(root_path)
 
-        # 정상 구조: 디렉토리면 그 안의 combined_star.fits
-        return os.path.join(root_path, "combined_star.fits")
+        return str(root_path / "combined_star.fits")
 
 
     def load_image_and_wcs(self, image_file: str) -> Tuple[np.ndarray, fits.Header, WCS]:

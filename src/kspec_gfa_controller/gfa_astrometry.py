@@ -73,7 +73,12 @@ def _get_default_logger() -> logging.Logger:
 
 
 class GFAAstrometry:
-    def __init__(self, config: str = None, logger: logging.Logger = None):
+    def __init__(
+        self,
+        config: str = None,
+        logger: logging.Logger = None,
+        save_root: Optional[Union[str, Path]] = None,
+):
         if config is None:
             config = _get_default_config_path()
         if logger is None:
@@ -85,31 +90,36 @@ class GFAAstrometry:
         with open(config, "r") as f:
             self.inpar = json.load(f)
 
-        base_dir = os.path.abspath(os.path.dirname(__file__))
+        dirs = self.inpar["paths"]["directories"]
 
-        # raw / temp / final(astrometry outputs) only
-        self.dir_path = os.path.join(base_dir, self.inpar["paths"]["directories"]["raw_images"])
-        self.temp_dir = os.path.join(base_dir, self.inpar["paths"]["directories"]["temp_files"])
-        self.final_astrometry_dir = os.path.join(
-            base_dir, self.inpar["paths"]["directories"]["final_astrometry_images"]
-        )
+        default_root = self.inpar.get(
+            "paths", {}
+        ).get("save_root", "~/work/DATA/GFADATA/img")
 
-        # ✅ star_catalog는 "디렉토리" 또는 "파일 경로" 둘 다 가능하게 처리
-        star_catalog_root = os.path.join(base_dir, self.inpar["paths"]["directories"]["star_catalog"])
-        if star_catalog_root.lower().endswith(".fits"):
-            self.combined_star_path = star_catalog_root
-            self.star_catalog_dir = os.path.dirname(star_catalog_root)
+        self.save_root = Path(
+            save_root or default_root
+        ).expanduser().resolve()
+
+        self.dir_path = str(self.save_root / dirs["raw_images"])
+        self.temp_dir = str(self.save_root / dirs["temp_files"])
+        self.final_astrometry_dir = str(self.save_root / dirs["final_astrometry_images"])
+
+        star_catalog_root = self.save_root / dirs["star_catalog"]
+
+        if str(star_catalog_root).lower().endswith(".fits"):
+            self.combined_star_path = str(star_catalog_root)
+            self.star_catalog_dir = str(star_catalog_root.parent)
         else:
-            self.star_catalog_dir = star_catalog_root
-            self.combined_star_path = os.path.join(self.star_catalog_dir, "combined_star.fits")
+            self.star_catalog_dir = str(star_catalog_root)
+            self.combined_star_path = str(star_catalog_root / "combined_star.fits")
 
         os.makedirs(self.dir_path, exist_ok=True)
         os.makedirs(self.temp_dir, exist_ok=True)
         os.makedirs(self.final_astrometry_dir, exist_ok=True)
         os.makedirs(self.star_catalog_dir, exist_ok=True)
 
-        # ✅ 로그 정리: Paths는 1회만 깔끔히
         self.logger.info("Paths:")
+        self.logger.info(f"  save_root         = {self.save_root}")
         self.logger.info(f"  raw_images        = {self.dir_path}")
         self.logger.info(f"  temp_files        = {self.temp_dir}")
         self.logger.info(f"  final_astrometry  = {self.final_astrometry_dir}")
