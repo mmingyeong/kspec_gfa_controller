@@ -63,9 +63,7 @@ class GFALogger:
         log_filename = f"gfa_{datetime.now().strftime('%Y-%m-%d')}.log"
         log_file_path = os.path.join(log_dir, log_filename)
 
-        formatter = logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(message)s"
-        )
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
         # Stream handler (console)
         stream_handler = logging.StreamHandler(sys.stdout)
@@ -74,9 +72,7 @@ class GFALogger:
         self.logger.addHandler(stream_handler)
 
         # File handler
-        file_handler = logging.FileHandler(
-            log_file_path, mode="a", encoding="utf-8"
-        )
+        file_handler = logging.FileHandler(log_file_path, mode="a", encoding="utf-8")
         file_handler.setFormatter(formatter)
         file_handler.setLevel(logging.DEBUG)
         self.logger.addHandler(file_handler)

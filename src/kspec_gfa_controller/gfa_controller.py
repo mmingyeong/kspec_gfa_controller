@@ -20,7 +20,6 @@ from typing import List
 from pathlib import Path
 
 
-
 from .gfa_img import GFAImage
 
 __all__ = ["GFAController"]
@@ -285,15 +284,16 @@ class GFAController:
         ftd: int = None,
         ra: str = None,
         dec: str = None,
+        save: bool = True,
     ):
         """Configure camera and grab an image."""
         loop = asyncio.get_running_loop()
 
-        # Transport layer settings
         await loop.run_in_executor(
             None, cam.GevSCPSPacketSize.SetValue, int(packet_size)
         )
         await loop.run_in_executor(None, cam.GevSCPD.SetValue, int(ipd))
+
         ftd_value = (
             int(ftd)
             if ftd is not None
@@ -301,7 +301,6 @@ class GFAController:
         )
         await loop.run_in_executor(None, cam.GevSCFTD.SetValue, ftd_value)
 
-        # Imaging settings
         microsec = int(ExpTime * 1_000_000)
         await loop.run_in_executor(None, cam.ExposureTime.SetValue, microsec)
         await loop.run_in_executor(None, cam.PixelFormat.SetValue, "Mono12")
@@ -312,30 +311,30 @@ class GFAController:
             result = await loop.run_in_executor(None, cam.GrabOne, self.grab_timeout)
             img = result.GetArray()
 
-            # Get current UTC time
             now = datetime.now(timezone.utc)
             date_str = now.strftime("%Y%m%d")
-            time_str = now.strftime("%H%M%S")  # e.g., 143012
+            time_str = now.strftime("%H%M%S")
             timestamp = f"D{date_str}_T{time_str}"
 
-            # Prefer serial hint if provided, else use cam index
             cam_label = serial_hint if serial_hint else f"cam{cam_index}"
             filename = f"{timestamp}_{cam_label}_exp{int(ExpTime)}s.fits"
 
-            self.img_class.save_fits(
-                image_array=img,
-                filename=filename,
-                exptime=ExpTime,
-                output_directory=output_dir,
-                ra=ra,
-                dec=dec,
-            )
+            if save:
+                self.img_class.save_fits(
+                    image_array=img,
+                    filename=filename,
+                    exptime=ExpTime,
+                    output_directory=output_dir,
+                    ra=ra,
+                    dec=dec,
+                )
 
             return img
 
         except genicam.TimeoutException:
             self.logger.error(
-                f"Timeout while grabbing image from camera {serial_hint or 'cam' + str(cam_index)}."
+                f"Timeout while grabbing image from camera "
+                f"{serial_hint or 'cam' + str(cam_index)}."
             )
             return None
 
@@ -351,53 +350,43 @@ class GFAController:
         ftd: int = None,
         ra: str = None,
         dec: str = None,
-    ) -> list:
+        save: bool = True,
+    ) -> dict:
         """
         Grab one image from a single camera.
 
-        If packet_size or ipd is None, automatically use the value from cams.json.
-        Otherwise, use the input parameter value.
-
-        Parameters
-        ----------
-        CamNum : int
-            Camera number (e.g., 1–7).
-        ExpTime : float
-            Exposure time in seconds.
-        Binning : int
-            Binning value.
-        packet_size : int, optional
-            Packet size for the camera. If None, use cams.json value.
-        ipd : int, optional
-            InterPacketDelay for the camera. If None, use cams.json value.
-        ftd_base : int
-            Frame Transmission Delay base value.
-        output_dir : str, optional
-            Output directory for image saving.
-        ftd : int, optional
-            Frame Transmission Delay (overrides ftd_base if set).
-
         Returns
         -------
-        list
-            List containing CamNum if timeout occurred, else empty list.
+        dict
+            {
+                "cam_num": CamNum,
+                "serial": serial number or None,
+                "image": numpy image array or None,
+                "timeout": bool,
+            }
         """
         key = f"Cam{CamNum}"
         cam = self.open_cameras.get(key)
+
         if cam is None:
             self.logger.error(f"Camera {key} not opened.")
-            return [CamNum]
+            return {
+                "cam_num": CamNum,
+                "serial": None,
+                "image": None,
+                "timeout": True,
+            }
 
-        # --- PacketSize, IPD 우선순위 적용 ---
         if packet_size is None:
             packet_size = self.get_camera_param(CamNum, "PacketSize")
         if ipd is None:
             ipd = self.get_camera_param(CamNum, "InterPacketDelay")
 
-        timeout_occurred = False
+        serial = None
 
         try:
             serial = cam.DeviceSerialNumber.GetValue()
+
             img = await self.configure_and_grab(
                 cam,
                 ExpTime,
@@ -411,20 +400,36 @@ class GFAController:
                 ftd=ftd,
                 ra=ra,
                 dec=dec,
+                save=save,
             )
 
             if img is None:
                 self.logger.error(f"Timeout detected after grabbing camera {CamNum}.")
-                timeout_occurred = True
+                return {
+                    "cam_num": CamNum,
+                    "serial": serial,
+                    "image": None,
+                    "timeout": True,
+                }
+
+            return {
+                "cam_num": CamNum,
+                "serial": serial,
+                "image": img,
+                "timeout": False,
+            }
 
         except genicam.TimeoutException:
             self.logger.error(f"TimeoutException during grabbing camera {CamNum}.")
-            timeout_occurred = True
         except Exception as e:
             self.logger.error(f"Error during grabbing camera {CamNum}: {e}")
-            timeout_occurred = True
 
-        return [CamNum] if timeout_occurred else []
+        return {
+            "cam_num": CamNum,
+            "serial": serial,
+            "image": None,
+            "timeout": True,
+        }
 
     async def grab(
         self,

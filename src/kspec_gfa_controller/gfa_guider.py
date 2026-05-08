@@ -90,7 +90,7 @@ class GFAGuider:
         config: Optional[str] = None,
         logger: Optional[logging.Logger] = None,
         save_root: Optional[Union[str, Path]] = None,
-) -> None:
+    ) -> None:
         if config is None:
             config = _get_default_config_path()
         if logger is None:
@@ -109,15 +109,15 @@ class GFAGuider:
 
         dirs = self.inpar["paths"]["directories"]
 
-        default_root = self.inpar.get(
-            "paths", {}
-        ).get("save_root", "~/work/DATA/GFADATA/img")
+        default_root = self.inpar.get("paths", {}).get(
+            "save_root", "~/work/DATA/GFADATA/img"
+        )
 
-        self.save_root = Path(
-            save_root or default_root
-        ).expanduser().resolve()
+        self.save_root = Path(save_root or default_root).expanduser().resolve()
 
-        self.final_astrometry_dir = str(self.save_root / dirs["final_astrometry_images"])
+        self.final_astrometry_dir = str(
+            self.save_root / dirs["final_astrometry_images"]
+        )
         self.cutout_path = str(self.save_root / dirs["cutout_directory"])
         self.raw_dir = str(self.save_root / dirs["raw_images"])
         self.star_catalog_root = str(self.save_root / dirs["star_catalog"])
@@ -133,7 +133,9 @@ class GFAGuider:
         self.logger.info(f"final_astrometry_dir  = {self.final_astrometry_dir}")
         self.logger.info(f"cutout_path           = {self.cutout_path}")
         self.logger.info(f"star_catalog_root     = {self.star_catalog_root}")
-        self.logger.info(f"combined_star_path    = {self._resolve_combined_star_path()}")
+        self.logger.info(
+            f"combined_star_path    = {self._resolve_combined_star_path()}"
+        )
         self.logger.info("=========================================")
 
         # 2) Guide star detection / selection parameters
@@ -145,7 +147,6 @@ class GFAGuider:
         self.pixel_scale = self.inpar["settings"]["image_processing"]["pixel_scale"]
 
         self.logger.info("GFAGuider setup complete.")
-
 
     def _astro_to_raw_path(self, astro_file: str) -> Optional[str]:
         """
@@ -165,7 +166,7 @@ class GFAGuider:
 
         # astro_ prefix 제거 (있든 없든 처리)
         if base.startswith("astro_"):
-            base2 = base[len("astro_"):]
+            base2 = base[len("astro_") :]
         else:
             base2 = base
 
@@ -173,7 +174,9 @@ class GFAGuider:
         # 예: D20260121_T171409_40103651_exp5s.fits -> 40103651
         m = re.match(r"^D\d{8}_T\d{6}_(\d+)_", base2)
         if not m:
-            self.logger.warning(f"[match] Cannot parse cam token from astro filename: {base}")
+            self.logger.warning(
+                f"[match] Cannot parse cam token from astro filename: {base}"
+            )
             return None
 
         cam_token = m.group(1)
@@ -192,7 +195,11 @@ class GFAGuider:
             candidates.extend(glob.glob(patt, recursive=True))
 
         # 혹시 같은 토큰이 다른 확장자/케이스로 올 경우
-        candidates = [p for p in candidates if os.path.isfile(p) and p.lower().endswith((".fits", ".fit", ".fts"))]
+        candidates = [
+            p
+            for p in candidates
+            if os.path.isfile(p) and p.lower().endswith((".fits", ".fit", ".fts"))
+        ]
 
         if not candidates:
             return None
@@ -200,8 +207,6 @@ class GFAGuider:
         # 여러 개면 최신 파일 선택
         candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
         return candidates[0]
-
-
 
     # ---------------------------------------------------------------------
     # ✅ NEW: combined_star.fits 경로 해석 (astrometry class와 동일 규칙)
@@ -214,8 +219,9 @@ class GFAGuider:
 
         return str(root_path / "combined_star.fits")
 
-
-    def load_image_and_wcs(self, image_file: str) -> Tuple[np.ndarray, fits.Header, WCS]:
+    def load_image_and_wcs(
+        self, image_file: str
+    ) -> Tuple[np.ndarray, fits.Header, WCS]:
         """
         Load image data and WCS from a FITS file.
         """
@@ -304,15 +310,16 @@ class GFAGuider:
                 f"→ astrometry class에서 build_combined_star_from_corr()가 실행되어 생성됐는지 확인."
             )
             raise FileNotFoundError(f"Star catalog file not found: {star_catalog_path}")
-        
+
         p = self._resolve_combined_star_path()
         if os.path.isdir(p):
             raise IsADirectoryError(f"Expected FITS file but got directory: {p}")
 
-
         with fits.open(star_catalog_path, memmap=True) as hdul:
             if len(hdul) < 2 or hdul[1].data is None:
-                raise RuntimeError(f"Invalid combined_star.fits (no table HDU[1]): {star_catalog_path}")
+                raise RuntimeError(
+                    f"Invalid combined_star.fits (no table HDU[1]): {star_catalog_path}"
+                )
 
             data = hdul[1].data
             ra_col = self.inpar["catalog_matching"]["fields"]["ra_column"]
@@ -337,7 +344,9 @@ class GFAGuider:
         # ✅ RA unit handling (hour -> deg)
         # -------------------------
         fields_cfg = self.inpar.get("catalog_matching", {}).get("fields", {})
-        ra_unit = (fields_cfg.get("ra_unit", "") or "").strip().lower()  # "deg" or "hour" or ""
+        ra_unit = (
+            (fields_cfg.get("ra_unit", "") or "").strip().lower()
+        )  # "deg" or "hour" or ""
 
         ra_min = float(np.nanmin(ra_p)) if ra_p.size else float("nan")
         ra_max = float(np.nanmax(ra_p)) if ra_p.size else float("nan")
@@ -415,7 +424,7 @@ class GFAGuider:
                     f"[catalog] flux stats: min={fmin:.3f}, median={fmed:.3f}, max={fmax:.3f}"
                 )
 
-                is_mag_like = (fmax < 100.0 and fmin >= -5.0)
+                is_mag_like = fmax < 100.0 and fmin >= -5.0
                 self.logger.debug(
                     f"[catalog] flux_column_heuristic="
                     f"{'MAG-like (bright=smaller)' if is_mag_like else 'FLUX-like (bright=larger)'}"
@@ -439,9 +448,11 @@ class GFAGuider:
                 "catalog_matching.tolerance.mag_flux_min not found in config; "
                 "selecting stars by angular distance only."
             )
-            mask = (angular_distance_degrees < self.ang_dist)
+            mask = angular_distance_degrees < self.ang_dist
         else:
-            mask = (angular_distance_degrees < self.ang_dist) & (valid_flux > float(mag_flux_min))
+            mask = (angular_distance_degrees < self.ang_dist) & (
+                valid_flux > float(mag_flux_min)
+            )
 
         ra_selected = ra_p[mask]
         dec_selected = dec_p[mask]
@@ -456,7 +467,9 @@ class GFAGuider:
     def radec_to_xy_stars(
         self, ra: np.ndarray, dec: np.ndarray, wcs: WCS
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        self.logger.debug("Converting RA/DEC arrays to X/Y pixel positions via WCS (np.round).")
+        self.logger.debug(
+            "Converting RA/DEC arrays to X/Y pixel positions via WCS (np.round)."
+        )
 
         x_pix, y_pix = wcs.world_to_pixel_values(ra, dec)
 
@@ -482,7 +495,6 @@ class GFAGuider:
         cutoutn_stack: List[np.ndarray],
         image_data: np.ndarray,
     ) -> Tuple[List[float], List[float], List[float], List[np.ndarray]]:
-
         self.logger.debug("==== Starting centroid offset calculation ====")
         dx, dy, peakc = [], [], []
 
@@ -591,7 +603,9 @@ class GFAGuider:
                     ]
                     if cutoutnp.size > 0 and np.max(cutoutnp) != 0:
                         cutoutn = cutoutnp / np.max(cutoutnp) * 1000
-                        fits_file = os.path.join(self.cutout_path, f"cutout_fluxmax_{file_counter}.fits")
+                        fits_file = os.path.join(
+                            self.cutout_path, f"cutout_fluxmax_{file_counter}.fits"
+                        )
                         fits.writeto(fits_file, cutoutn, overwrite=True)
                         cutoutn_stack.append(cutoutn)
 
@@ -638,7 +652,7 @@ class GFAGuider:
                 dx.append(0)
                 dy.append(0)
                 peakc.append(-1)
-                self.logger.debug(f"Finding peaks exception for star {i+1}: {exc}")
+                self.logger.debug(f"Finding peaks exception for star {i + 1}: {exc}")
 
         # ✅ per-file summary: thr + peak stats
         if ok_peak_values:
@@ -657,7 +671,6 @@ class GFAGuider:
 
         self.logger.debug("==== Finished centroid offset calculation ====")
         return dx, dy, peakc, cutoutn_stack
-
 
     def peak_select(
         self, dx: List[float], dy: List[float], peakc: List[float]
@@ -694,10 +707,12 @@ class GFAGuider:
         # ✅ classification + diagnostics
         # -------------------------
         n_total = int(peak_array.size)
-        n_invalid = int(np.sum(peak_array <= 0))   # -1 포함 (nopeak/실패)
+        n_invalid = int(np.sum(peak_array <= 0))  # -1 포함 (nopeak/실패)
         n_low = int(np.sum((peak_array > 0) & (peak_array < self.peakmin)))
         n_high = int(np.sum(peak_array > self.peakmax))
-        n_kept = int(np.sum((peak_array >= self.peakmin) & (peak_array <= self.peakmax)))
+        n_kept = int(
+            np.sum((peak_array >= self.peakmin) & (peak_array <= self.peakmax))
+        )
 
         valid_peaks = peak_array[peak_array > 0]
         if valid_peaks.size > 0:
@@ -717,7 +732,9 @@ class GFAGuider:
         # -------------------------
         # ✅ selection
         # -------------------------
-        valid_indices = np.where((peak_array >= self.peakmin) & (peak_array <= self.peakmax))
+        valid_indices = np.where(
+            (peak_array >= self.peakmin) & (peak_array <= self.peakmax)
+        )
         pindn = valid_indices[0]
 
         # -------------------------
@@ -737,7 +754,6 @@ class GFAGuider:
         dyn = np.array([dy[i] for i in pindn], dtype=float)
 
         return dxn, dyn, pindn
-
 
     def cal_final_offset(
         self, dxp: np.ndarray, dyp: np.ndarray, pindp: np.ndarray
@@ -767,7 +783,7 @@ class GFAGuider:
         else:
             self.logger.warning("Offsets within critical threshold; returning 0, 0.")
             return 0.0, 0.0
-            
+
     @staticmethod
     def isotropic_gaussian_2d(
         xy: Tuple[np.ndarray, np.ndarray],
@@ -783,7 +799,9 @@ class GFAGuider:
 
     def cal_seeing(self, cutoutn_stack: List[np.ndarray]) -> float:
         if not cutoutn_stack:
-            self.logger.warning("No cutouts available for FWHM calculation. Returning NaN.")
+            self.logger.warning(
+                "No cutouts available for FWHM calculation. Returning NaN."
+            )
             return float("nan")
 
         averaged_cutoutn = np.median(cutoutn_stack, axis=0)
@@ -818,7 +836,7 @@ class GFAGuider:
             self.logger.error(f"Gaussian fitting failed: {exc}")
             return float("nan")
 
-# gfa_guider.py (GFAGuider.exe_cal) - 수정본
+    # gfa_guider.py (GFAGuider.exe_cal) - 수정본
     def exe_cal(self) -> Tuple[float, float, float]:
         """
         Soft-fail version:
@@ -827,7 +845,9 @@ class GFAGuider:
         - peak_select 실패는 해당 파일만 skip
         """
         try:
-            self.logger.info("========== Starting guide star calibration process ==========")
+            self.logger.info(
+                "========== Starting guide star calibration process =========="
+            )
 
             astro_dir = self.final_astrometry_dir
             if not astro_dir:
@@ -836,7 +856,9 @@ class GFAGuider:
 
             astro_files = sorted(glob.glob(os.path.join(astro_dir, "astro_*.fits")))
             if not astro_files:
-                self.logger.error(f"No astrometry FITS files found in {astro_dir} (astro_*.fits).")
+                self.logger.error(
+                    f"No astrometry FITS files found in {astro_dir} (astro_*.fits)."
+                )
                 return math.nan, math.nan, math.nan
 
             # combined_star.fits 존재 체크
@@ -884,8 +906,8 @@ class GFAGuider:
                     self.logger.debug(f"  Raw background stddev: {stddev:.4f}")
 
                     # 3) catalog 로드 + 필드 주변 별 선택
-                    ra1_rad, dec1_rad, ra2_rad, dec2_rad, ra_p, dec_p, flux = self.load_star_catalog(
-                        crval1, crval2
+                    ra1_rad, dec1_rad, ra2_rad, dec2_rad, ra_p, dec_p, flux = (
+                        self.load_star_catalog(crval1, crval2)
                     )
 
                     ra_sel, dec_sel, flux_sel = self.select_stars(
@@ -893,25 +915,31 @@ class GFAGuider:
                     )
 
                     if len(ra_sel) == 0:
-                        self.logger.warning("No catalog stars selected for this field (after cuts).")
+                        self.logger.warning(
+                            "No catalog stars selected for this field (after cuts)."
+                        )
                         file_counter += 1
                         continue
 
                     # 4) catalog RA/DEC -> pixel 예상 위치 (astro WCS로 투영)
-                    dra, ddec, dra_f, ddec_f = self.radec_to_xy_stars(ra_sel, dec_sel, wcs_obj)
+                    dra, ddec, dra_f, ddec_f = self.radec_to_xy_stars(
+                        ra_sel, dec_sel, wcs_obj
+                    )
 
                     # 5) raw 이미지에서 peak/centroid 찾고 arcsec offset 계산
-                    dx_vals, dy_vals, peak_vals, cutoutn_stack = self.cal_centroid_offset(
-                        dra,
-                        ddec,
-                        dra_f,
-                        ddec_f,
-                        stddev,
-                        wcs_obj,
-                        flux_sel,
-                        file_counter,
-                        cutoutn_stack,
-                        image_data,   # raw background-subtracted image
+                    dx_vals, dy_vals, peak_vals, cutoutn_stack = (
+                        self.cal_centroid_offset(
+                            dra,
+                            ddec,
+                            dra_f,
+                            ddec_f,
+                            stddev,
+                            wcs_obj,
+                            flux_sel,
+                            file_counter,
+                            cutoutn_stack,
+                            image_data,  # raw background-subtracted image
+                        )
                     )
 
                     # 6) peak 조건으로 별 필터링
@@ -940,21 +968,29 @@ class GFAGuider:
                     file_counter += 1
 
                 except Exception as exc:
-                    self.logger.error(f"Error processing astro={astro_file} raw={raw_file}: {exc}")
+                    self.logger.error(
+                        f"Error processing astro={astro_file} raw={raw_file}: {exc}"
+                    )
                     try:
                         self.logger.debug(traceback.format_exc())
                     except Exception:
                         pass
                     # ✅ critical이라도 전체를 죽이지 않고 soft-fail로 처리: 해당 파일만 skip
-                    self.logger.warning(f"[skip] Critical error in this pair; skipping file.")
+                    self.logger.warning(
+                        "[skip] Critical error in this pair; skipping file."
+                    )
                     file_counter += 1
                     continue
 
             if skipped:
-                self.logger.warning(f"Skipped {skipped} astro files due to missing raw matches.")
+                self.logger.warning(
+                    f"Skipped {skipped} astro files due to missing raw matches."
+                )
 
             if not dxpp or not dypp or not pindpp:
-                self.logger.error("No valid guide star data collected. Calibration failed.")
+                self.logger.error(
+                    "No valid guide star data collected. Calibration failed."
+                )
                 return math.nan, math.nan, math.nan
 
             dxp = np.concatenate(dxpp) if len(dxpp) else np.array([])
@@ -964,12 +1000,16 @@ class GFAGuider:
             self.logger.info(f"Total valid guide star offsets: {len(dxp)}")
 
             fdx, fdy = self.cal_final_offset(dxp, dyp, pindp)
-            self.logger.info(f"Computed final offset: ΔX = {fdx} arcsec, ΔY = {fdy} arcsec")
+            self.logger.info(
+                f"Computed final offset: ΔX = {fdx} arcsec, ΔY = {fdy} arcsec"
+            )
 
             fwhm = self.cal_seeing(cutoutn_stack)
             self.logger.info(f"Estimated FWHM from cutouts: {fwhm} arcsec")
 
-            self.logger.info("========== Guide star calibration completed successfully ==========")
+            self.logger.info(
+                "========== Guide star calibration completed successfully =========="
+            )
             return fdx, fdy, fwhm
 
         except Exception as e:

@@ -10,6 +10,7 @@ from pathlib import Path
 import glob
 
 from astropy.io import fits
+from collections import defaultdict
 
 from .gfa_logger import GFALogger
 from .gfa_environment import create_environment, GFAEnvironment
@@ -117,7 +118,9 @@ class GFAActions:
         Ensure solve-field runs with a clean subprocess env (conda/venv collisions 방지).
         """
         clean_env = _make_clean_subprocess_env()
-        if hasattr(self.env, "astrometry") and hasattr(self.env.astrometry, "set_subprocess_env"):
+        if hasattr(self.env, "astrometry") and hasattr(
+            self.env.astrometry, "set_subprocess_env"
+        ):
             self.env.astrometry.set_subprocess_env(clean_env)
 
     def _ensure_astrometry_outputs_ready(self) -> List[str]:
@@ -136,7 +139,9 @@ class GFAActions:
             return astro_files
 
         if not hasattr(self.env.astrometry, "preproc"):
-            raise RuntimeError("env.astrometry has no preproc()/ensure_astrometry_ready()")
+            raise RuntimeError(
+                "env.astrometry has no preproc()/ensure_astrometry_ready()"
+            )
 
         ok = self.env.astrometry.preproc()
         if not ok:
@@ -144,7 +149,9 @@ class GFAActions:
 
         astro_files = sorted(glob.glob(str(Path(astro_dir) / "astro_*.fits")))
         if not astro_files:
-            raise RuntimeError(f"Astrometry expected outputs not found in {astro_dir} (astro_*.fits)")
+            raise RuntimeError(
+                f"Astrometry expected outputs not found in {astro_dir} (astro_*.fits)"
+            )
 
         return astro_files
 
@@ -152,7 +159,9 @@ class GFAActions:
         self,
         CamNum: Union[int, List[int]] = 0,
         ExpTime: float = 1.0,
+        ExpNum: int = 1,
         Binning: int = 4,
+        SaveCombineRaw: bool = True,
         *,
         packet_size: int = None,
         cam_ipd: int = None,
@@ -172,6 +181,14 @@ class GFAActions:
 
         grab_save_path.mkdir(parents=True, exist_ok=True)
 
+        if ExpTime > 10:
+            raise ValueError(
+                "ExpTime must be <= 10 seconds. Use ExpNum for longer total exposure."
+            )
+
+        if ExpNum < 1:
+            raise ValueError("ExpNum must be >= 1")
+
         self.env.logger.info(f"[grab] save_root={save_root}")
         self.env.logger.info(f"[grab] dirs={dirs}")
         self._debug_path_block(
@@ -183,89 +200,114 @@ class GFAActions:
         )
 
         timeout_cameras: List[int] = []
+        images_by_camera = defaultdict(list)
+        serial_by_camera = {}
 
         self.env.logger.info("Open all plate cameras...")
         await self.env.controller.open_all_cameras()
 
         try:
-            if isinstance(CamNum, int) and CamNum != 0:
-                self.env.logger.info(f"[grab] controller output_dir={str(grab_save_path)}")
 
-                res = await self.env.controller.grabone(
-                    CamNum=CamNum,
-                    ExpTime=ExpTime,
-                    Binning=Binning,
-                    output_dir=str(grab_save_path),
-                    packet_size=packet_size,
-                    ipd=cam_ipd,
-                    ftd_base=cam_ftd_base,
+            def _camera_list_from_camnum(camnum):
+                if isinstance(camnum, int) and camnum == 0:
+                    return list(self.env.camera_ids)
+                if isinstance(camnum, int):
+                    return [camnum]
+                if isinstance(camnum, list):
+                    return camnum
+                raise ValueError(f"Invalid CamNum: {camnum}")
+
+            cam_list = _camera_list_from_camnum(CamNum)
+
+            for exp_idx in range(ExpNum):
+                self.env.logger.info(
+                    f"[grab] exposure {exp_idx + 1}/{ExpNum}, "
+                    f"output_dir={grab_save_path}, SaveCombineRaw={SaveCombineRaw}"
+                )
+
+                save_intermediate = SaveCombineRaw if ExpNum > 1 else False
+
+                tasks = [
+                    self.env.controller.grabone(
+                        CamNum=cam_id,
+                        ExpTime=ExpTime,
+                        Binning=Binning,
+                        output_dir=str(grab_save_path),
+                        packet_size=packet_size,
+                        ipd=cam_ipd,
+                        ftd_base=cam_ftd_base,
+                        ra=ra,
+                        dec=dec,
+                        save=save_intermediate,
+                    )
+                    for cam_id in cam_list
+                ]
+
+                results = await asyncio.gather(*tasks)
+
+                for result in results:
+                    cam_num = result["cam_num"]
+
+                    if result["timeout"]:
+                        timeout_cameras.append(cam_num)
+                        continue
+
+                    serial_by_camera[cam_num] = result["serial"]
+                    images_by_camera[cam_num].append(result["image"])
+
+            grab_files = []
+            timestamp = datetime.utcnow().strftime("D%Y%m%d_T%H%M%S")
+
+            for cam_num, image_list in images_by_camera.items():
+                if len(image_list) == 0:
+                    continue
+
+                serial = serial_by_camera.get(cam_num, f"cam{cam_num}")
+
+                if ExpNum > 1:
+                    filename = f"{timestamp}_{serial}_combined.fits"
+                else:
+                    filename = f"{timestamp}_{serial}_exp{int(ExpTime)}s.fits"
+
+                self.env.controller.img_class.save_fits(
+                    image_array=image_list,
+                    filename=filename,
+                    exptime=ExpTime * len(image_list),
+                    output_directory=str(grab_save_path),
                     ra=ra,
                     dec=dec,
                 )
-                timeout_cameras.extend(res)
 
-                msg = f"Image grabbed from camera {CamNum}."
-                if timeout_cameras:
-                    msg += f" Timeout: {timeout_cameras[0]}"
-                return self._generate_response("success", msg, save_path=str(grab_save_path))
+                grab_files.append(str(grab_save_path / filename))
 
-            if isinstance(CamNum, int) and CamNum == 0:
-                self.env.logger.info(f"[grab] controller output_dir={str(grab_save_path)}")
+            if CamNum == 0:
+                msg = (
+                    f"Images grabbed from all cameras. "
+                    f"ExpNum={ExpNum}, SaveCombineRaw={SaveCombineRaw}."
+                )
+            else:
+                msg = (
+                    f"Images grabbed from cameras {cam_list}. "
+                    f"ExpNum={ExpNum}, SaveCombineRaw={SaveCombineRaw}."
+                )
 
-                tasks = [
-                    self.env.controller.grabone(
-                        CamNum=cam_id,
-                        ExpTime=ExpTime,
-                        Binning=Binning,
-                        output_dir=str(grab_save_path),
-                        packet_size=packet_size,
-                        ipd=cam_ipd,
-                        ftd_base=cam_ftd_base,
-                        ra=ra,
-                        dec=dec,
-                    )
-                    for cam_id in self.env.camera_ids
-                ]
-                results = await asyncio.gather(*tasks)
-                for r in results:
-                    timeout_cameras.extend(r)
+            if timeout_cameras:
+                msg += f" Timeout: {timeout_cameras}"
 
-                msg = "Images grabbed from all cameras."
-                if timeout_cameras:
-                    msg += f" Timeout: {timeout_cameras}"
-                return self._generate_response("success", msg, save_path=str(grab_save_path))
-
-            if isinstance(CamNum, list):
-                self.env.logger.info(f"[grab] controller output_dir={str(grab_save_path)}")
-
-                tasks = [
-                    self.env.controller.grabone(
-                        CamNum=cam_id,
-                        ExpTime=ExpTime,
-                        Binning=Binning,
-                        output_dir=str(grab_save_path),
-                        packet_size=packet_size,
-                        ipd=cam_ipd,
-                        ftd_base=cam_ftd_base,
-                        ra=ra,
-                        dec=dec,
-                    )
-                    for cam_id in CamNum
-                ]
-                results = await asyncio.gather(*tasks)
-                for r in results:
-                    timeout_cameras.extend(r)
-
-                msg = f"Images grabbed from cameras {CamNum}."
-                if timeout_cameras:
-                    msg += f" Timeout: {timeout_cameras}"
-                return self._generate_response("success", msg, save_path=str(grab_save_path))
-
-            raise ValueError(f"Invalid CamNum: {CamNum}")
+            return self._generate_response(
+                "success",
+                msg,
+                save_path=str(grab_save_path),
+                grab_files=grab_files,
+            )
 
         except Exception as e:
             self.env.logger.error(f"Grab failed: {e}")
-            return self._generate_response("error", f"Grab failed: {e}", save_path=str(grab_save_path))
+            return self._generate_response(
+                "error",
+                f"Grab failed: {e}",
+                save_path=str(grab_save_path),
+            )
 
         finally:
             self.env.logger.info("Close all plate cameras...")
@@ -277,7 +319,9 @@ class GFAActions:
     async def guiding(
         self,
         ExpTime: float = 1.0,
-        save: bool = True,
+        ExpNum: int = 1,
+        SaveGrabRaw: bool = True,
+        SaveCombineRaw: bool = True,
         ra: str = None,
         dec: str = None,
     ) -> Dict[str, Any]:
@@ -298,7 +342,8 @@ class GFAActions:
         self.env.logger.info(f"[guiding] save_root={save_root}")
         self.env.logger.info(f"[guiding] dirs={dirs}")
         self.env.logger.info(
-            f"[guiding] save={save}, raw_save_path={raw_save_path}, guiding_save_path={guiding_save_path}"
+            f"[guiding] SaveGrabRaw={SaveGrabRaw}, SaveCombineRaw={SaveCombineRaw}, "
+            f"raw_save_path={raw_save_path}, guiding_save_path={guiding_save_path}"
         )
 
         self._debug_path_block(
@@ -315,25 +360,26 @@ class GFAActions:
         try:
             self.env.logger.info("Starting guiding sequence...")
 
-            await self.env.controller.open_all_cameras()
-            try:
-                self.env.logger.info(f"[guiding] controller output_dir={str(raw_save_path)}")
+            grab_result = await self.grab(
+                CamNum=0,
+                ExpTime=ExpTime,
+                ExpNum=ExpNum,
+                Binning=4,
+                SaveCombineRaw=SaveCombineRaw,
+                path=str(raw_save_path),
+                ra=ra,
+                dec=dec,
+            )
 
-                await self.env.controller.grab(
-                    0,
-                    ExpTime,
-                    4,
-                    output_dir=str(raw_save_path),
-                    ra=ra,
-                    dec=dec,
+            if grab_result.get("status") != "success":
+                return self._generate_response(
+                    "error",
+                    f"Guiding image grab failed: {grab_result.get('message')}",
+                    raw_path=str(raw_save_path),
+                    save_path=str(guiding_save_path),
                 )
-            finally:
-                try:
-                    await self.env.controller.close_all_cameras()
-                except Exception as e:
-                    self.env.logger.warning(f"close_all_cameras failed: {e}")
 
-            if save:
+            if SaveGrabRaw:
                 self.env.logger.info(f"Saving guiding images to {guiding_save_path}")
 
                 exts = (".fits", ".fit", ".fts")
@@ -341,9 +387,13 @@ class GFAActions:
                 copied = 0
 
                 try:
-                    self.env.logger.info(f"raw contents: {os.listdir(str(raw_save_path))}")
+                    self.env.logger.info(
+                        f"raw contents: {os.listdir(str(raw_save_path))}"
+                    )
                 except Exception as e:
-                    self.env.logger.warning(f"Failed to list raw directory: {raw_save_path}, error={e}")
+                    self.env.logger.warning(
+                        f"Failed to list raw directory: {raw_save_path}, error={e}"
+                    )
 
                 for src in glob.glob(pattern, recursive=True):
                     if os.path.isfile(src) and src.lower().endswith(exts):
@@ -352,11 +402,15 @@ class GFAActions:
                         shutil.copy2(src, str(dst))
                         copied += 1
 
-                self.env.logger.info(f"[guiding] saved {copied} fits files to {guiding_save_path}")
+                self.env.logger.info(
+                    f"[guiding] saved {copied} fits files to {guiding_save_path}"
+                )
 
             self._apply_clean_env_to_astrometry()
 
-            self.env.logger.info("Ensuring astrometry outputs are ready (no procimg dependency)...")
+            self.env.logger.info(
+                "Ensuring astrometry outputs are ready (no procimg dependency)..."
+            )
             astro_files = self._ensure_astrometry_outputs_ready()
             self.env.logger.info(f"Astrometry inputs ready: {len(astro_files)} files.")
 
@@ -372,7 +426,9 @@ class GFAActions:
                     return True
 
             if _is_nan(fdx) or _is_nan(fdy) or _is_nan(fwhm):
-                msg = "Guiding completed with WARNING: no reliable guide stars detected."
+                msg = (
+                    "Guiding completed with WARNING: no reliable guide stars detected."
+                )
                 return self._generate_response(
                     "warning",
                     msg,
@@ -415,9 +471,11 @@ class GFAActions:
         ra: str,
         dec: str,
         ExpTime: float = 1.0,
+        ExpNum: int = 1,
         Binning: int = 4,
         CamNum: int = 0,
-        save: bool = True,
+        SaveGrabRaw: bool = True,
+        SaveCombineRaw: bool = True,
         clear_dir: bool = True,
     ) -> Dict[str, Any]:
         save_root, dirs = self._get_save_root_and_dirs()
@@ -435,7 +493,8 @@ class GFAActions:
         self.env.logger.info(f"[pointing] save_root={save_root}")
         self.env.logger.info(f"[pointing] dirs={dirs}")
         self.env.logger.info(
-            f"[pointing] save={save}, raw_save_path={pointing_raw_path}, pointing_save_path={pointing_save_path}"
+            f"[pointing] SaveGrabRaw={SaveGrabRaw}, SaveCombineRaw={SaveCombineRaw}, "
+            f"raw_save_path={pointing_raw_path}, pointing_save_path={pointing_save_path}"
         )
 
         self._debug_path_block(
@@ -447,7 +506,9 @@ class GFAActions:
             },
         )
 
-        def _get_crvals_from_fits(fits_files: List[Path]) -> Tuple[List[float], List[float]]:
+        def _get_crvals_from_fits(
+            fits_files: List[Path],
+        ) -> Tuple[List[float], List[float]]:
             cr1_list, cr2_list = [], []
             for p in fits_files:
                 try:
@@ -468,25 +529,26 @@ class GFAActions:
             if clear_dir:
                 self.env.astrometry.clear_raw_files()
 
-            await self.env.controller.open_all_cameras()
-            try:
-                self.env.logger.info(f"[pointing] controller output_dir={str(pointing_raw_path)}")
+            grab_result = await self.grab(
+                CamNum=CamNum,
+                ExpTime=ExpTime,
+                ExpNum=ExpNum,
+                Binning=Binning,
+                SaveCombineRaw=SaveCombineRaw,
+                path=str(pointing_raw_path),
+                ra=ra,
+                dec=dec,
+            )
 
-                await self.env.controller.grab(
-                    CamNum,
-                    ExpTime,
-                    Binning,
-                    output_dir=str(pointing_raw_path),
-                    ra=ra,
-                    dec=dec,
+            if grab_result.get("status") != "success":
+                return self._generate_response(
+                    "error",
+                    f"Pointing image grab failed: {grab_result.get('message')}",
+                    raw_path=str(pointing_raw_path),
+                    save_path=str(pointing_save_path),
                 )
-            finally:
-                try:
-                    await self.env.controller.close_all_cameras()
-                except Exception as e:
-                    self.env.logger.warning(f"close_all_cameras failed: {e}")
 
-            if save:
+            if SaveGrabRaw:
                 self.env.logger.info(f"Saving pointing images to {pointing_save_path}")
 
                 exts = (".fits", ".fit", ".fts")
@@ -494,9 +556,13 @@ class GFAActions:
                 copied = 0
 
                 try:
-                    self.env.logger.info(f"raw contents: {os.listdir(str(pointing_raw_path))}")
+                    self.env.logger.info(
+                        f"raw contents: {os.listdir(str(pointing_raw_path))}"
+                    )
                 except Exception as e:
-                    self.env.logger.warning(f"Failed to list raw directory: {pointing_raw_path}, error={e}")
+                    self.env.logger.warning(
+                        f"Failed to list raw directory: {pointing_raw_path}, error={e}"
+                    )
 
                 for src in glob.glob(pattern, recursive=True):
                     if os.path.isfile(src) and src.lower().endswith(exts):
@@ -505,11 +571,15 @@ class GFAActions:
                         shutil.copy2(src, str(dst))
                         copied += 1
 
-                self.env.logger.info(f"[pointing] saved {copied} fits files to {pointing_save_path}")
+                self.env.logger.info(
+                    f"[pointing] saved {copied} fits files to {pointing_save_path}"
+                )
 
             self._apply_clean_env_to_astrometry()
 
-            self.env.logger.info("Ensuring astrometry outputs are ready (no procimg dependency)...")
+            self.env.logger.info(
+                "Ensuring astrometry outputs are ready (no procimg dependency)..."
+            )
             astro_files = self._ensure_astrometry_outputs_ready()
             astro_files = list(astro_files) if astro_files else []
 

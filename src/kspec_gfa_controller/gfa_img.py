@@ -17,6 +17,9 @@ from PIL import Image
 
 from scipy.ndimage import maximum_filter, median_filter
 
+from collections import defaultdict
+from astropy.stats import sigma_clip
+
 __all__ = ["GFAImage"]
 
 
@@ -43,7 +46,7 @@ class GFAImage:
 
     def save_fits(
         self,
-        image_array: np.ndarray,
+        image_array,
         filename: str,
         exptime: float,
         telescope: str = "KMTNET",
@@ -57,42 +60,15 @@ class GFAImage:
         output_directory: Optional[str] = None,
     ) -> None:
         """
-        Save an image array to a FITS file with an extended header.
+        Save image data to a FITS file.
 
-        Parameters
-        ----------
-        image_array : numpy.ndarray
-            The 2D image data to save.
-        filename : str
-            The name of the FITS file (without extension or with .fits).
-        exptime : float
-            The exposure time of the image in seconds.
-        telescope : str, optional
-            The name of the telescope (default "KMTNET").
-        instrument : str, optional
-            The name of the instrument (default "KSPEC-GFA").
-        observer : str, optional
-            The name of the observer (default "Mingyeong").
-        object_name : str, optional
-            The name of the observed object (default "Unknown").
-        date_obs : str, optional
-            The observation date in "YYYY-MM-DD" format. If None, uses the current date.
-        time_obs : str, optional
-            The observation time in "HH:MM:SS" format. If None, uses the current time.
-        ra : str, optional
-            The right ascension of the observed object (default "UNKNOWN" if None).
-        dec : str, optional
-            The declination of the observed object (default "UNKNOWN" if None).
-        output_directory : str, optional
-            The directory where the FITS file will be saved. If None, uses the current
-            working directory.
+        If image_array is 2D:
+            hot pixel removal -> save FITS.
 
-        Raises
-        ------
-        OSError
-            If there is an error creating or writing to the specified output directory.
+        If image_array is list of 2D arrays or 3D array:
+            hot pixel removal per frame -> sigma-clipped mean combine -> save FITS.
         """
-        # 1. Determine output directory
+
         if output_directory is None:
             output_directory = os.getcwd()
 
@@ -106,17 +82,12 @@ class GFAImage:
                 )
                 raise
 
-        # 2. Ensure filename ends with .fits
         if not filename.lower().endswith(".fits"):
             filename += ".fits"
 
-        filename = filename.replace(":", "-")  # Windows-safe
-
+        filename = filename.replace(":", "-")
         filepath = os.path.join(output_directory, filename)
-        self.logger.debug(f"FITS file will be saved to: {filepath}")
-        self.logger.debug(f"Image array shape: {image_array.shape}")
 
-        # 3. Default date/time if not provided
         now = datetime.now()
         if date_obs is None:
             date_obs = now.strftime("%Y-%m-%d")
@@ -125,13 +96,70 @@ class GFAImage:
             time_obs = now.strftime("%H:%M:%S")
             self.logger.warning("No time_obs provided. Using current time.")
 
-        # 4. Construct FITS header
+        # -------------------------------------------------
+        # 1. Normalize input
+        # -------------------------------------------------
+        ncomb = 1
+
+        if isinstance(image_array, list):
+            if len(image_array) == 0:
+                raise ValueError("image_array list is empty")
+
+            frames = [np.asarray(img) for img in image_array]
+            ncomb = len(frames)
+
+        else:
+            arr = np.asarray(image_array)
+
+            if arr.ndim != 2:
+                raise ValueError(
+                    f"image_array must be 2D array or list of 2D arrays. "
+                    f"Got shape={arr.shape}"
+                )
+
+            frames = [arr]
+
+        # -------------------------------------------------
+        # 2. Hot pixel removal per frame
+        # -------------------------------------------------
+        cleaned_frames = [
+            self.hot_pixel_removal_median_ratio(
+                img,
+                factor=1.5,
+                n_iter=2,
+            )
+            for img in frames
+        ]
+
+        # -------------------------------------------------
+        # 3. Combine if multiple frames
+        # -------------------------------------------------
+        if len(cleaned_frames) == 1:
+            final_image = cleaned_frames[0].astype(np.float32)
+
+        else:
+            shapes = [img.shape for img in cleaned_frames]
+            if len(set(shapes)) != 1:
+                raise ValueError(f"Image size mismatch: {shapes}")
+
+            stack = np.stack(cleaned_frames, axis=0)
+
+            clipped = sigma_clip(stack, sigma=3, axis=0)
+            final_image = np.ma.mean(clipped, axis=0).filled(np.nan)
+            final_image = final_image.astype(np.float32)
+
+        self.logger.debug(f"FITS file will be saved to: {filepath}")
+        self.logger.debug(f"Final image shape: {final_image.shape}")
+
+        # -------------------------------------------------
+        # 4. Header
+        # -------------------------------------------------
         header = fits.Header()
         header["SIMPLE"] = True
         header["BITPIX"] = -32
         header["NAXIS"] = 2
-        header["NAXIS1"] = image_array.shape[1]
-        header["NAXIS2"] = image_array.shape[0]
+        header["NAXIS1"] = final_image.shape[1]
+        header["NAXIS2"] = final_image.shape[0]
         header["CTYPE1"] = "PIXEL"
         header["CTYPE2"] = "PIXEL"
 
@@ -144,12 +172,16 @@ class GFAImage:
         header["RA"] = ra if ra is not None else "UNKNOWN"
         header["DEC"] = dec if dec is not None else "UNKNOWN"
         header["EXPTIME"] = exptime
-        header["COMMENT"] = "FITS file created with custom header fields and hot pixel removed"
-        self.logger.debug(f"FITS header details: {header}")
+        header["NCOMB"] = ncomb
+        header["COMBINE"] = "SIGMA_MEAN" if ncomb > 1 else "NONE"
+        header["COMMENT"] = (
+            "FITS file created with custom header fields and hot pixel removed"
+        )
 
-        # 5. Create and write FITS
-        cleaned = self.hot_pixel_removal_median_ratio(image_array, factor=1.5, n_iter=2)
-        hdu = fits.PrimaryHDU(data=cleaned, header=header)
+        # -------------------------------------------------
+        # 5. Save FITS
+        # -------------------------------------------------
+        hdu = fits.PrimaryHDU(data=final_image, header=header)
         hdul = fits.HDUList([hdu])
 
         try:
@@ -168,7 +200,6 @@ class GFAImage:
         vmax: Optional[float] = None,
         bit_depth: int = 8,
     ) -> None:
-
         if bit_depth not in (8, 16):
             raise ValueError("bit_depth must be 8 or 16")
 
@@ -224,9 +255,7 @@ class GFAImage:
                     vmin, vmax = img_min, img_max
 
             except Exception as e:
-                self.logger.warning(
-                    f"zscale failed ({e}); falling back to min/max"
-                )
+                self.logger.warning(f"zscale failed ({e}); falling back to min/max")
                 vmin, vmax = img_min, img_max
 
         # final safety guard
@@ -259,11 +288,11 @@ class GFAImage:
     @staticmethod
     def hot_pixel_removal_median_ratio(
         img: np.ndarray,
-        factor: float = 5.0,            # 주변 median의 몇 배 이상이면 제거할지
+        factor: float = 5.0,  # 주변 median의 몇 배 이상이면 제거할지
         n_iter: int = 1,
         mode: str = "mirror",
         saturated_value: int | float | None = None,
-        eps: float = 1e-6,              # median이 0 근처일 때 0나눔/과잉검출 방지
+        eps: float = 1e-6,  # median이 0 근처일 때 0나눔/과잉검출 방지
         abs_threshold: float | None = None,  # (선택) |P - median|이 이것보다 커야 제거
         keep_dtype: bool = True,
     ):
@@ -279,15 +308,13 @@ class GFAImage:
         work = img.astype(np.float32, copy=True)
 
         # 중앙 제외한 8-neighbor footprint
-        footprint = np.array([[1, 1, 1],
-                            [1, 0, 1],
-                            [1, 1, 1]], dtype=np.uint8)
+        footprint = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]], dtype=np.uint8)
 
         for _ in range(max(1, int(n_iter))):
             med_nb = median_filter(work, footprint=footprint, mode=mode)
 
             # ratio 조건: P > median * factor
-            denom = np.maximum(np.abs(med_nb), eps)   # median이 0일 때 폭주 방지
+            denom = np.maximum(np.abs(med_nb), eps)  # median이 0일 때 폭주 방지
             mask = work > denom * float(factor)
 
             # (선택) 절대 차이 조건도 추가
@@ -296,7 +323,7 @@ class GFAImage:
 
             # saturation 값은 제외하고 싶다면
             if saturated_value is not None:
-                mask &= (work != float(saturated_value))
+                mask &= work != float(saturated_value)
 
             # 치환
             work[mask] = med_nb[mask]
@@ -310,3 +337,81 @@ class GFAImage:
                 work = work.astype(img.dtype)
 
         return work
+
+    def combine_fits_by_camera(
+        self,
+        base_dir: str,
+        output_dir: str = "combined",
+        sigma: float = 3,
+        output_prefix: str = "cam",
+    ) -> list[str]:
+        camera_ids = [
+            "40103651",
+            "40103667",
+            "40103663",
+            "40103831",
+            "40103833",
+            "40103834",
+        ]
+
+        os.makedirs(output_dir, exist_ok=True)
+        groups = defaultdict(list)
+
+        for filename in os.listdir(base_dir):
+            if not filename.lower().endswith((".fits", ".fit", ".fts")):
+                continue
+
+            if "_combined" in filename.lower():
+                continue
+
+            for cam_id in camera_ids:
+                if f"_{cam_id}_" in filename:
+                    groups[cam_id].append(os.path.join(base_dir, filename))
+                    break
+
+        output_files = []
+
+        for cam_id in camera_ids:
+            files = sorted(groups[cam_id])
+
+            if len(files) == 0:
+                self.logger.warning(f"Camera {cam_id}: no files")
+                continue
+
+            self.logger.info(f"Processing camera {cam_id}: {len(files)} files")
+
+            data_list = []
+            headers = []
+
+            for f in files:
+                with fits.open(f) as hdul:
+                    data_list.append(hdul[0].data.astype(float))
+                    headers.append(hdul[0].header)
+
+            shapes = [d.shape for d in data_list]
+            if len(set(shapes)) != 1:
+                raise ValueError(f"{cam_id}: image size mismatch {shapes}")
+
+            stack = np.stack(data_list, axis=0)
+
+            clipped = sigma_clip(stack, sigma=sigma, axis=0)
+            combined = np.ma.mean(clipped, axis=0).filled(np.nan)
+            combined = combined.astype(np.float32)
+
+            header = headers[0].copy()
+            header["NCOMB"] = len(files)
+            header["COMBINE"] = "SIGMA_MEAN"
+            header["SIGMA"] = sigma
+            header["CAMID"] = cam_id
+
+            output_file = os.path.join(
+                output_dir,
+                f"{output_prefix}_{cam_id}_combined.fits",
+            )
+
+            fits.writeto(output_file, combined, header=header, overwrite=True)
+            output_files.append(output_file)
+
+            self.logger.info(f"Saved combined FITS: {output_file}")
+
+        return output_files

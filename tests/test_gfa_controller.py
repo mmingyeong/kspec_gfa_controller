@@ -107,7 +107,9 @@ class FakeGrabResult:
 
 
 class FakeInstantCamera:
-    def __init__(self, _device, *, open_state=False, raise_timeout=False, raise_on_open=False):
+    def __init__(
+        self, _device, *, open_state=False, raise_timeout=False, raise_on_open=False
+    ):
         self._open = open_state
         self._raise_timeout = raise_timeout
         self._raise_on_open = raise_on_open
@@ -208,6 +210,7 @@ def gc_module(monkeypatch):
 
     # ✅ 패키지 경로로 import
     import kspec_gfa_controller.gfa_controller as gfa_controller
+
     importlib.reload(gfa_controller)
     return gfa_controller
 
@@ -395,7 +398,6 @@ async def test_open_all_cameras_failure_raises_runtimeerror(controller, monkeypa
         await controller.open_all_cameras()
 
 
-
 # -------------------------
 # configure_and_grab()
 # -------------------------
@@ -500,7 +502,9 @@ async def test_grabone_configure_returns_none_marks_timeout(controller, monkeypa
 
 
 @pytest.mark.asyncio
-async def test_grabone_configure_raises_exception_marks_timeout(controller, monkeypatch):
+async def test_grabone_configure_raises_exception_marks_timeout(
+    controller, monkeypatch
+):
     cam = FakeInstantCamera(object(), open_state=True, raise_timeout=False)
     controller.open_cameras["Cam1"] = cam
 

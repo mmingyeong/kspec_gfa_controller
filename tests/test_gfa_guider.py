@@ -24,12 +24,14 @@ def _find_gfa_guider_py() -> Path:
     repo_root = Path(__file__).resolve().parents[1]
     candidates = [
         repo_root / "src" / "kspec_gfa_controller" / "gfa_guider.py",  # src layout
-        repo_root / "kspec_gfa_controller" / "gfa_guider.py",          # non-src layout
+        repo_root / "kspec_gfa_controller" / "gfa_guider.py",  # non-src layout
     ]
     for p in candidates:
         if p.exists():
             return p
-    raise RuntimeError("gfa_guider.py not found. tried:\n" + "\n".join(map(str, candidates)))
+    raise RuntimeError(
+        "gfa_guider.py not found. tried:\n" + "\n".join(map(str, candidates))
+    )
 
 
 def _install_fake_scipy_and_photutils():
@@ -45,14 +47,18 @@ def _install_fake_scipy_and_photutils():
         fake_opt = types.ModuleType("scipy.optimize")
 
         def _curve_fit_unavailable(*args, **kwargs):
-            raise RuntimeError("scipy.optimize.curve_fit is unavailable in test environment")
+            raise RuntimeError(
+                "scipy.optimize.curve_fit is unavailable in test environment"
+            )
 
         fake_opt.curve_fit = _curve_fit_unavailable
 
         fake_nd = types.ModuleType("scipy.ndimage")
 
         def _maximum_filter_unavailable(*args, **kwargs):
-            raise RuntimeError("scipy.ndimage.maximum_filter is unavailable in test environment")
+            raise RuntimeError(
+                "scipy.ndimage.maximum_filter is unavailable in test environment"
+            )
 
         fake_nd.maximum_filter = _maximum_filter_unavailable
 
@@ -60,7 +66,9 @@ def _install_fake_scipy_and_photutils():
 
         class _KDTreeUnavailable:
             def __init__(self, *a, **k):
-                raise RuntimeError("scipy.spatial.KDTree is unavailable in test environment")
+                raise RuntimeError(
+                    "scipy.spatial.KDTree is unavailable in test environment"
+                )
 
         fake_spatial.KDTree = _KDTreeUnavailable
 
@@ -81,7 +89,9 @@ def _install_fake_scipy_and_photutils():
         fake_detection = types.ModuleType("photutils.detection")
 
         def _find_peaks_unavailable(*args, **kwargs):
-            raise RuntimeError("photutils.detection.find_peaks is unavailable in test environment")
+            raise RuntimeError(
+                "photutils.detection.find_peaks is unavailable in test environment"
+            )
 
         fake_detection.find_peaks = _find_peaks_unavailable
 
@@ -222,7 +232,9 @@ def test_get_default_config_path_success(monkeypatch):
     monkeypatch.setattr(mod.os.path, "isfile", lambda p: True)
     p = mod._get_default_config_path()
     norm = os.path.normpath(p)
-    assert norm.endswith(os.path.normpath(os.path.join("etc", "astrometry_params.json")))
+    assert norm.endswith(
+        os.path.normpath(os.path.join("etc", "astrometry_params.json"))
+    )
 
 
 def test_default_logger_no_duplicate_handlers():
@@ -253,13 +265,22 @@ def test_init_missing_config_raises_runtimeerror(tmp_path):
 
 def test_init_missing_raw_key_raises_keyerror(tmp_path):
     cfg = {
-        "paths": {"directories": {
-            "final_astrometry_images": str(tmp_path / "final"),
-            "cutout_directory": str(tmp_path / "cutout"),
-            "star_catalog": str(tmp_path / "catalog"),
-        }},
-        "detection": {"box_size": 20, "criteria": {"critical_outlier": 0.5}, "peak_detection": {"max": 30000, "min": 10}},
-        "catalog_matching": {"tolerance": {"angular_distance": 1.0, "mag_flux_min": 0.1}, "fields": {"ra_column": "RA", "dec_column": "DEC", "mag_flux": "FLUX"}},
+        "paths": {
+            "directories": {
+                "final_astrometry_images": str(tmp_path / "final"),
+                "cutout_directory": str(tmp_path / "cutout"),
+                "star_catalog": str(tmp_path / "catalog"),
+            }
+        },
+        "detection": {
+            "box_size": 20,
+            "criteria": {"critical_outlier": 0.5},
+            "peak_detection": {"max": 30000, "min": 10},
+        },
+        "catalog_matching": {
+            "tolerance": {"angular_distance": 1.0, "mag_flux_min": 0.1},
+            "fields": {"ra_column": "RA", "dec_column": "DEC", "mag_flux": "FLUX"},
+        },
         "settings": {"image_processing": {"pixel_scale": 0.4}},
     }
     cfgp = tmp_path / "cfg.json"
@@ -290,7 +311,9 @@ def test_astro_to_raw_path_parse_fail_returns_none(guider_config):
 # -------------------------
 # ✅ NEW 2/6: parse ok but no candidates => None
 # -------------------------
-def test_astro_to_raw_path_parse_ok_but_no_candidates_returns_none(tmp_path, guider_config):
+def test_astro_to_raw_path_parse_ok_but_no_candidates_returns_none(
+    tmp_path, guider_config
+):
     cfg = _load_cfg(guider_config)
     raw_dir = tmp_path / "raw_empty"
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -407,6 +430,7 @@ def test_background_returns_subtracted_and_stddev(guider_config):
 # -------------------------
 def _write_combined_star_fits(path: Path, cols: dict[str, Any]):
     from astropy.io import fits
+
     col_defs = []
     for name, arr in cols.items():
         arr = np.array(arr)
@@ -435,6 +459,7 @@ def test_load_star_catalog_invalid_hdu_raises_runtimeerror(tmp_path, guider_conf
 
     bad = catdir / "combined_star.fits"
     from astropy.io import fits
+
     fits.PrimaryHDU().writeto(bad, overwrite=True)
 
     with pytest.raises(RuntimeError):
@@ -468,7 +493,9 @@ def test_load_star_catalog_ra_hour_auto_converts(tmp_path, guider_config):
     g = _mk_guider(guider_config)
 
     p = catdir / "combined_star.fits"
-    _write_combined_star_fits(p, {"RA": [1.0, 2.0], "DEC": [0.0, 0.1], "FLUX": [1.0, 1.0]})
+    _write_combined_star_fits(
+        p, {"RA": [1.0, 2.0], "DEC": [0.0, 0.1], "FLUX": [1.0, 1.0]}
+    )
 
     _, _, _, _, ra_p, _, _ = g.load_star_catalog(10.0, 20.0)
     assert np.allclose(ra_p, np.array([15.0, 30.0]))
@@ -485,7 +512,9 @@ def test_load_star_catalog_ra_unit_force_deg_no_convert(tmp_path, guider_config)
     g = _mk_guider(guider_config)
 
     p = catdir / "combined_star.fits"
-    _write_combined_star_fits(p, {"RA": [1.0, 2.0], "DEC": [0.0, 0.1], "FLUX": [1.0, 1.0]})
+    _write_combined_star_fits(
+        p, {"RA": [1.0, 2.0], "DEC": [0.0, 0.1], "FLUX": [1.0, 1.0]}
+    )
 
     _, _, _, _, ra_p, _, _ = g.load_star_catalog(10.0, 20.0)
     assert np.allclose(ra_p, np.array([1.0, 2.0]))
@@ -543,7 +572,9 @@ def test_select_stars_no_mag_flux_min_selects_by_angle_only(guider_config):
     ra2_rad = np.radians(ra_p)
     dec2_rad = np.radians(dec_p)
 
-    ra_sel, dec_sel, flux_sel = g.select_stars(ra1_rad, dec1_rad, ra2_rad, dec2_rad, ra_p, dec_p, flux)
+    ra_sel, dec_sel, flux_sel = g.select_stars(
+        ra1_rad, dec1_rad, ra2_rad, dec2_rad, ra_p, dec_p, flux
+    )
     assert len(ra_sel) == 1
     assert np.allclose(ra_sel, [0.0])
     assert np.allclose(flux_sel, [0.0])  # nan_to_num
@@ -631,7 +662,9 @@ def test_cal_centroid_offset_success_and_failure(tmp_path, monkeypatch, guider_c
     assert peakc[1] == -1
 
 
-def test_cal_centroid_offset_branches_oob_edge_nopeaks_badflux(monkeypatch, guider_config, tmp_path):
+def test_cal_centroid_offset_branches_oob_edge_nopeaks_badflux(
+    monkeypatch, guider_config, tmp_path
+):
     g = _mk_guider(guider_config)
     Path(g.cutout_path).mkdir(parents=True, exist_ok=True)
     g.boxsize = 10
@@ -657,14 +690,25 @@ def test_cal_centroid_offset_branches_oob_edge_nopeaks_badflux(monkeypatch, guid
         call["n"] += 1
         if call["n"] == 1:
             return []
-        return {"x_peak": [g.boxsize // 2], "y_peak": [g.boxsize // 2], "peak_value": [50.0]}
+        return {
+            "x_peak": [g.boxsize // 2],
+            "y_peak": [g.boxsize // 2],
+            "peak_value": [50.0],
+        }
 
     monkeypatch.setattr(mod.pd, "find_peaks", fake_find_peaks, raising=True)
 
     dx, dy, peakc, _ = g.cal_centroid_offset(
-        dra=dra, ddec=ddec, dra_f=dra_f, ddec_f=ddec_f,
-        stddev=stddev, wcs=wcs, fluxn=fluxn,
-        file_counter=1, cutoutn_stack=[], image_data=image_data
+        dra=dra,
+        ddec=ddec,
+        dra_f=dra_f,
+        ddec_f=ddec_f,
+        stddev=stddev,
+        wcs=wcs,
+        fluxn=fluxn,
+        file_counter=1,
+        cutoutn_stack=[],
+        image_data=image_data,
     )
 
     assert len(dx) == 4 and len(dy) == 4 and len(peakc) == 4
@@ -744,7 +788,11 @@ def test_cal_final_offset_above_threshold_and_trim_minmax(monkeypatch, guider_co
         def __init__(self, n):
             self.mask = np.array([False] * n)
 
-    monkeypatch.setattr(mod, "sigma_clip", lambda distances, sigma, maxiters: FakeClipped(len(distances)))
+    monkeypatch.setattr(
+        mod,
+        "sigma_clip",
+        lambda distances, sigma, maxiters: FakeClipped(len(distances)),
+    )
 
     dxp = np.array([2.0, 2.0, 2.0, 2.0, 2.0, 10.0])
     dyp = np.zeros_like(dxp)
@@ -776,7 +824,11 @@ def test_cal_seeing_save_fails_still_returns_value(monkeypatch, guider_config):
     g = _mk_guider(guider_config)
     Path(g.cutout_path).mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setattr(mod.fits, "writeto", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk full")))
+    monkeypatch.setattr(
+        mod.fits,
+        "writeto",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk full")),
+    )
 
     def fake_curve_fit(func, xy, z, p0):
         params = np.array([100.0, 5.0, 5.0, 2.0, 0.0])
@@ -795,7 +847,12 @@ def test_cal_seeing_save_fails_still_returns_value(monkeypatch, guider_config):
 def test_cal_seeing_curve_fit_failure_returns_nan(monkeypatch, guider_config):
     g = _mk_guider(guider_config)
     Path(g.cutout_path).mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(mod, "curve_fit", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("fit fail")), raising=True)
+    monkeypatch.setattr(
+        mod,
+        "curve_fit",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("fit fail")),
+        raising=True,
+    )
 
     cutout = np.ones((11, 11), dtype=np.float32)
     fwhm = g.cal_seeing([cutout])
@@ -898,7 +955,9 @@ def test_exe_cal_all_skipped_raw_match_returns_nan(tmp_path, guider_config):
     astro = final_dir / "astro_badname.fits"
     astro.write_text("dummy", encoding="utf-8")
 
-    _write_combined_star_fits(cat_dir / "combined_star.fits", {"RA": [0.0], "DEC": [0.0], "FLUX": [1.0]})
+    _write_combined_star_fits(
+        cat_dir / "combined_star.fits", {"RA": [0.0], "DEC": [0.0], "FLUX": [1.0]}
+    )
 
     fdx, fdy, fwhm = g.exe_cal()
     assert math.isnan(fdx) and math.isnan(fdy) and math.isnan(fwhm)
@@ -928,9 +987,15 @@ def test_exe_cal_loop_error_raises_runtimeerror(tmp_path, guider_config, monkeyp
     raw = raw_dir / "D20260121_T171409_40103651_exp5s.fits"
     raw.write_text("dummy", encoding="utf-8")
 
-    _write_combined_star_fits(cat_dir / "combined_star.fits", {"RA": [0.0], "DEC": [0.0], "FLUX": [1.0]})
+    _write_combined_star_fits(
+        cat_dir / "combined_star.fits", {"RA": [0.0], "DEC": [0.0], "FLUX": [1.0]}
+    )
 
-    monkeypatch.setattr(g, "load_image_and_wcs", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        g,
+        "load_image_and_wcs",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
 
     with pytest.raises(RuntimeError):
         g.exe_cal()
@@ -960,7 +1025,9 @@ def test_exe_cal_success_minimal_flow(tmp_path, guider_config, monkeypatch):
     raw = raw_dir / "D20260121_T171409_40103651_exp5s.fits"
     raw.write_text("dummy", encoding="utf-8")
 
-    _write_combined_star_fits(cat_dir / "combined_star.fits", {"RA": [0.0], "DEC": [0.0], "FLUX": [1.0]})
+    _write_combined_star_fits(
+        cat_dir / "combined_star.fits", {"RA": [0.0], "DEC": [0.0], "FLUX": [1.0]}
+    )
 
     class FakeWCS:
         def world_to_pixel_values(self, ra, dec):
@@ -968,8 +1035,12 @@ def test_exe_cal_success_minimal_flow(tmp_path, guider_config, monkeypatch):
 
     fake_header = {"CRVAL1": 10.0, "CRVAL2": 20.0}
 
-    monkeypatch.setattr(g, "load_image_and_wcs", lambda p: (np.zeros((2, 2)), fake_header, FakeWCS()))
-    monkeypatch.setattr(g, "load_only_image", lambda p: np.zeros((20, 20), dtype=np.float32))
+    monkeypatch.setattr(
+        g, "load_image_and_wcs", lambda p: (np.zeros((2, 2)), fake_header, FakeWCS())
+    )
+    monkeypatch.setattr(
+        g, "load_only_image", lambda p: np.zeros((20, 20), dtype=np.float32)
+    )
     monkeypatch.setattr(g, "background", lambda img: (img, 1.0))
 
     monkeypatch.setattr(
@@ -985,15 +1056,32 @@ def test_exe_cal_success_minimal_flow(tmp_path, guider_config, monkeypatch):
             np.array([1000.0]),
         ),
     )
-    monkeypatch.setattr(g, "select_stars", lambda *a, **k: (np.array([10.0]), np.array([20.0]), np.array([1000.0])))
-    monkeypatch.setattr(g, "radec_to_xy_stars", lambda *a, **k: (np.array([10]), np.array([10]), np.array([10.0]), np.array([10.0])))
+    monkeypatch.setattr(
+        g,
+        "select_stars",
+        lambda *a, **k: (np.array([10.0]), np.array([20.0]), np.array([1000.0])),
+    )
+    monkeypatch.setattr(
+        g,
+        "radec_to_xy_stars",
+        lambda *a, **k: (
+            np.array([10]),
+            np.array([10]),
+            np.array([10.0]),
+            np.array([10.0]),
+        ),
+    )
 
     def fake_cal_centroid_offset(*args, **kwargs):
         stack = kwargs.get("cutoutn_stack", args[8] if len(args) > 8 else [])
         return [1.0], [2.0], [100.0], stack
 
     monkeypatch.setattr(g, "cal_centroid_offset", fake_cal_centroid_offset)
-    monkeypatch.setattr(g, "peak_select", lambda dx, dy, peakc: (np.array([1.0]), np.array([2.0]), np.array([0])))
+    monkeypatch.setattr(
+        g,
+        "peak_select",
+        lambda dx, dy, peakc: (np.array([1.0]), np.array([2.0]), np.array([0])),
+    )
 
     monkeypatch.setattr(g, "cal_final_offset", lambda dxp, dyp, pindp: (1.23, 4.56))
     monkeypatch.setattr(g, "cal_seeing", lambda cutouts: 0.78)

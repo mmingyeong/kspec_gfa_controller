@@ -22,6 +22,7 @@ CameraRole = Literal["plate", "finder"]
 
 DEFAULT_SAVE_ROOT = Path.home() / "work/DATA/GFADATA/img"
 
+
 def get_config_path(relative_path: str) -> str:
     """
     Return absolute path from relative config file path.
@@ -73,9 +74,7 @@ class GFAEnvironment:
         self.ast_config_path = ast_config_path
         self.role = role
 
-        self.save_root = Path(
-            save_root or DEFAULT_SAVE_ROOT
-        ).expanduser().resolve()
+        self.save_root = Path(save_root or DEFAULT_SAVE_ROOT).expanduser().resolve()
 
         self.save_root.mkdir(parents=True, exist_ok=True)
 
@@ -124,4 +123,4 @@ def create_environment(
         ast_config_path,
         role=role,
         save_root=save_root,
-)
+    )

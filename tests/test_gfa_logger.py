@@ -21,8 +21,8 @@ def _find_gfa_logger_py() -> Path:
     repo_root = Path(__file__).resolve().parents[1]
 
     candidates = [
-        repo_root / "src" / "kspec_gfa_controller" / "gfa_logger.py",          # src layout
-        repo_root / "kspec_gfa_controller" / "gfa_logger.py",                 # non-src layout
+        repo_root / "src" / "kspec_gfa_controller" / "gfa_logger.py",  # src layout
+        repo_root / "kspec_gfa_controller" / "gfa_logger.py",  # non-src layout
     ]
 
     for p in candidates:
@@ -90,7 +90,8 @@ def _console_handlers(logger: logging.Logger):
     return [
         h
         for h in logger.handlers
-        if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+        if isinstance(h, logging.StreamHandler)
+        and not isinstance(h, logging.FileHandler)
     ]
 
 

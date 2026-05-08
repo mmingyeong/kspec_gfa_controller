@@ -19,13 +19,15 @@ UNDER_TEST_MODNAME = "kspec_gfa_controller.gfa_img__under_test"
 def _find_gfa_img_py() -> Path:
     repo_root = Path(__file__).resolve().parents[1]
     candidates = [
-        repo_root / "src" / "kspec_gfa_controller" / "gfa_img.py",   # src layout
-        repo_root / "kspec_gfa_controller" / "gfa_img.py",          # non-src layout
+        repo_root / "src" / "kspec_gfa_controller" / "gfa_img.py",  # src layout
+        repo_root / "kspec_gfa_controller" / "gfa_img.py",  # non-src layout
     ]
     for p in candidates:
         if p.exists():
             return p
-    raise RuntimeError("gfa_img.py not found. tried:\n" + "\n".join(map(str, candidates)))
+    raise RuntimeError(
+        "gfa_img.py not found. tried:\n" + "\n".join(map(str, candidates))
+    )
 
 
 def _load_module_force():
@@ -40,6 +42,7 @@ def _load_module_force():
 
     # 항상 재로딩
     import sys
+
     if UNDER_TEST_MODNAME in sys.modules:
         del sys.modules[UNDER_TEST_MODNAME]
 
@@ -72,7 +75,7 @@ def test_save_fits_writes_file_and_header(tmp_path, logger, caplog):
     caplog.set_level(logging.DEBUG)
 
     img = GFAImage(logger=logger)
-    arr = (np.arange(12, dtype=np.float32).reshape(3, 4) / 100.0)
+    arr = np.arange(12, dtype=np.float32).reshape(3, 4) / 100.0
 
     img.save_fits(
         image_array=arr,
@@ -151,7 +154,9 @@ def test_save_fits_creates_output_directory(tmp_path, logger):
     assert (outdir / "abc.fits").exists()
 
 
-def test_save_fits_logs_warning_when_date_or_time_missing(tmp_path, logger, caplog, monkeypatch):
+def test_save_fits_logs_warning_when_date_or_time_missing(
+    tmp_path, logger, caplog, monkeypatch
+):
     caplog.set_level(logging.WARNING)
 
     class FixedDatetime(datetime):
@@ -228,7 +233,9 @@ def test_save_fits_does_not_call_makedirs_if_dir_exists(tmp_path, logger, monkey
     assert (tmp_path / "exists_dir.fits").exists()
 
 
-def test_save_fits_raises_when_cannot_create_directory(tmp_path, logger, monkeypatch, caplog):
+def test_save_fits_raises_when_cannot_create_directory(
+    tmp_path, logger, monkeypatch, caplog
+):
     caplog.set_level(logging.ERROR)
 
     img = GFAImage(logger=logger)
@@ -297,7 +304,9 @@ def test_save_png_flat_image_saves_black_and_returns(tmp_path, logger, caplog):
     assert any("flat image detected" in r.message.lower() for r in caplog.records)
 
 
-def test_save_png_zscale_failure_falls_back_to_minmax(tmp_path, logger, monkeypatch, caplog):
+def test_save_png_zscale_failure_falls_back_to_minmax(
+    tmp_path, logger, monkeypatch, caplog
+):
     caplog.set_level(logging.WARNING)
 
     img = GFAImage(logger=logger)
@@ -320,7 +329,9 @@ def test_save_png_zscale_failure_falls_back_to_minmax(tmp_path, logger, monkeypa
     assert any("zscale failed" in r.message.lower() for r in caplog.records)
 
 
-def test_save_png_invalid_range_even_after_fallback_raises(tmp_path, logger, monkeypatch, caplog):
+def test_save_png_invalid_range_even_after_fallback_raises(
+    tmp_path, logger, monkeypatch, caplog
+):
     caplog.set_level(logging.ERROR)
 
     img = GFAImage(logger=logger)
@@ -328,9 +339,18 @@ def test_save_png_invalid_range_even_after_fallback_raises(tmp_path, logger, mon
 
     # vmin/vmax를 강제로 동일하게 주면 final safety guard가 터져야 함
     with pytest.raises(ValueError):
-        img.save_png(arr, "bad_range", output_directory=str(tmp_path), vmin=1.0, vmax=1.0, bit_depth=8)
+        img.save_png(
+            arr,
+            "bad_range",
+            output_directory=str(tmp_path),
+            vmin=1.0,
+            vmax=1.0,
+            bit_depth=8,
+        )
 
-    assert any("invalid normalization range" in r.message.lower() for r in caplog.records)
+    assert any(
+        "invalid normalization range" in r.message.lower() for r in caplog.records
+    )
 
 
 def test_save_png_16bit_saves_uint16(tmp_path, logger):
@@ -383,7 +403,9 @@ def test_hot_pixel_removal_abs_threshold_blocks_small_diffs():
 def test_hot_pixel_removal_keep_dtype_integer_roundtrip():
     img = np.zeros((5, 5), dtype=np.uint16)
     img[2, 2] = 5000
-    out = GFAImage.hot_pixel_removal_median_ratio(img, factor=1.5, n_iter=1, keep_dtype=True)
+    out = GFAImage.hot_pixel_removal_median_ratio(
+        img, factor=1.5, n_iter=1, keep_dtype=True
+    )
 
     assert out.dtype == np.uint16
     # 주변 median=0 => 치환되면 0

@@ -54,6 +54,7 @@ class _JobAdapter(logging.LoggerAdapter):
     Adds per-job context to log records.
     Usage: lg = _JobAdapter(BASE_LOGGER, {"job": "abc123", "image": "foo.fits"})
     """
+
     def process(self, msg, kwargs):
         extra = kwargs.get("extra", {})
         extra = {**self.extra, **extra}
@@ -61,7 +62,9 @@ class _JobAdapter(logging.LoggerAdapter):
         return msg, kwargs
 
 
-def _get_logger(logger_in: Optional[Union[logging.Logger, GFALogger]]) -> logging.Logger:
+def _get_logger(
+    logger_in: Optional[Union[logging.Logger, GFALogger]],
+) -> logging.Logger:
     """
     Return a logger, but always anchored to GFALogger.
 
@@ -161,7 +164,9 @@ def _read_ra_dec(image_path: Union[str, Path], lg: logging.Logger) -> Tuple[str,
         dec_s = str(dec).strip()
     except Exception as e:
         lg.exception("Failed to convert RA/DEC to string. RA=%r DEC=%r", ra, dec)
-        raise ValueError(f"RA/DEC not convertible to string (RA={ra}, DEC={dec})") from e
+        raise ValueError(
+            f"RA/DEC not convertible to string (RA={ra}, DEC={dec})"
+        ) from e
 
     lg.info("Header RA=%s DEC=%s", ra_s, dec_s)
     return ra_s, dec_s
@@ -174,7 +179,7 @@ def _list_dir(path: Path, limit: int = 200) -> List[str]:
     try:
         items = sorted(os.listdir(path))
         if len(items) > limit:
-            return items[:limit] + [f"... ({len(items)-limit} more)"]
+            return items[:limit] + [f"... ({len(items) - limit} more)"]
         return items
     except Exception:
         return ["<failed to list directory>"]
@@ -330,7 +335,9 @@ def get_crval_from_image(
         res_root.mkdir(parents=True, exist_ok=True)
 
         # ✅ avoid collisions under parallel runs: make a per-image, per-job subdir
-        safe_stem = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in image_path.stem)
+        safe_stem = "".join(
+            c if c.isalnum() or c in ("-", "_") else "_" for c in image_path.stem
+        )
         work_dir = res_root / f"{job_id}_{safe_stem}"
         work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -405,7 +412,9 @@ def get_crval_from_image(
         # Only delete when the caller explicitly provided a work_dir AND keep_work_dir=False.
         if (not keep_work_dir) and (not tmp_created):
             try:
-                lg.info("Cleaning up work_dir: %s (tmp_created=%s)", work_dir, tmp_created)
+                lg.info(
+                    "Cleaning up work_dir: %s (tmp_created=%s)", work_dir, tmp_created
+                )
                 shutil.rmtree(str(work_dir), ignore_errors=True)
             except Exception:
                 lg.exception("Failed to remove work_dir: %s", work_dir)
@@ -453,8 +462,8 @@ def get_crvals_from_images(
         c1, c2 = get_crval_from_image(
             p,
             config=config,
-            logger=base_logger,          # keep same GFALogger-backed logger
-            work_dir=None,              # ✅ persistent DEFAULT_RES_ROOT used
+            logger=base_logger,  # keep same GFALogger-backed logger
+            work_dir=None,  # ✅ persistent DEFAULT_RES_ROOT used
             keep_work_dir=keep_work_dir,
             solve_field=solve_field,
             subprocess_env=subprocess_env,

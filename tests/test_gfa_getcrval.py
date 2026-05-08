@@ -38,7 +38,9 @@ def lg(monkeypatch):
     return logger
 
 
-def _write_fits(path: Path, ra=None, dec=None, crval1=None, crval2=None, extra_hdr=None):
+def _write_fits(
+    path: Path, ra=None, dec=None, crval1=None, crval2=None, extra_hdr=None
+):
     hdr = fits.Header()
     if ra is not None:
         hdr["RA"] = ra
@@ -87,8 +89,12 @@ def test_get_solve_field_path_env_override_success(monkeypatch, lg, tmp_path):
     fake.write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
 
     # exists + executable
-    monkeypatch.setattr(mod.Path, "exists", lambda self: str(self) == str(fake), raising=False)
-    monkeypatch.setattr(mod.os, "access", lambda p, m: str(p) == str(fake), raising=True)
+    monkeypatch.setattr(
+        mod.Path, "exists", lambda self: str(self) == str(fake), raising=False
+    )
+    monkeypatch.setattr(
+        mod.os, "access", lambda p, m: str(p) == str(fake), raising=True
+    )
 
     env = {"ASTROMETRY_SOLVE_FIELD": str(fake)}
     got = mod._get_solve_field_path(lg, env=env)
@@ -100,14 +106,20 @@ def test_get_solve_field_path_missing_raises_filenotfound(monkeypatch, lg):
     monkeypatch.setattr(mod.os, "access", lambda p, m: True, raising=True)
 
     with pytest.raises(FileNotFoundError):
-        mod._get_solve_field_path(lg, env={"ASTROMETRY_SOLVE_FIELD": "/nope/solve-field"})
+        mod._get_solve_field_path(
+            lg, env={"ASTROMETRY_SOLVE_FIELD": "/nope/solve-field"}
+        )
 
 
-def test_get_solve_field_path_not_executable_raises_permission(monkeypatch, lg, tmp_path):
+def test_get_solve_field_path_not_executable_raises_permission(
+    monkeypatch, lg, tmp_path
+):
     fake = tmp_path / "solve-field"
     fake.write_text("x", encoding="utf-8")
 
-    monkeypatch.setattr(mod.Path, "exists", lambda self: str(self) == str(fake), raising=False)
+    monkeypatch.setattr(
+        mod.Path, "exists", lambda self: str(self) == str(fake), raising=False
+    )
     monkeypatch.setattr(mod.os, "access", lambda p, m: False, raising=True)
 
     with pytest.raises(PermissionError):
@@ -138,7 +150,6 @@ def test_read_ra_dec_missing_raises(tmp_path, lg):
     _write_fits(f)
     with pytest.raises(ValueError):
         mod._read_ra_dec(f, lg)
-
 
 
 # -------------------------
@@ -173,7 +184,9 @@ def test_load_config_none_uses_default_path(monkeypatch, tmp_path, lg):
     cfgp = tmp_path / "cfg.json"
     _write_config(cfgp)
 
-    monkeypatch.setattr(mod, "_get_default_config_path", lambda: str(cfgp), raising=True)
+    monkeypatch.setattr(
+        mod, "_get_default_config_path", lambda: str(cfgp), raising=True
+    )
     cfg = mod._load_config(None, lg)
     assert cfg["settings"]["cpu"]["limit"] == 30
 
@@ -195,7 +208,9 @@ def test_list_dir_handles_oserror(monkeypatch, tmp_path):
 # -------------------------
 def test_run_solve_field_timeout_becomes_runtimeerror(monkeypatch, lg):
     def _raise_timeout(*a, **k):
-        raise subprocess.TimeoutExpired(cmd="solve-field ...", timeout=1, output="o", stderr="e")
+        raise subprocess.TimeoutExpired(
+            cmd="solve-field ...", timeout=1, output="o", stderr="e"
+        )
 
     monkeypatch.setattr(mod.subprocess, "run", _raise_timeout, raising=True)
 
@@ -229,7 +244,9 @@ def test_run_solve_field_returncode_nonzero_raises(monkeypatch, lg):
 # -------------------------
 # _find_solved_new_file()
 # -------------------------
-def test_find_solved_new_file_fit_extension_and_fallback_glob(tmp_path, lg, monkeypatch):
+def test_find_solved_new_file_fit_extension_and_fallback_glob(
+    tmp_path, lg, monkeypatch
+):
     """
     .fit 확장자 패턴 분기 + stem*.new 폴백 분기 커버(207-218, 224, 242-245 등).
     """
@@ -256,7 +273,9 @@ def test_find_solved_new_file_fit_extension_and_fallback_glob(tmp_path, lg, monk
     assert got.name == "x_something.new"
 
 
-def test_find_solved_new_file_multiple_candidates_sorted_first(tmp_path, lg, monkeypatch):
+def test_find_solved_new_file_multiple_candidates_sorted_first(
+    tmp_path, lg, monkeypatch
+):
     img = tmp_path / "img.fits"
     img.write_text("dummy", encoding="utf-8")
     work = tmp_path / "work2"
@@ -307,10 +326,14 @@ def test_get_crval_from_image_explicit_solve_field_missing_raises(tmp_path, lg):
     _write_config(cfgp)
 
     with pytest.raises(FileNotFoundError):
-        mod.get_crval_from_image(img, config=cfgp, logger=lg, solve_field=tmp_path / "nope_solve_field")
+        mod.get_crval_from_image(
+            img, config=cfgp, logger=lg, solve_field=tmp_path / "nope_solve_field"
+        )
 
 
-def test_get_crval_from_image_explicit_solve_field_not_exec_raises(tmp_path, monkeypatch, lg):
+def test_get_crval_from_image_explicit_solve_field_not_exec_raises(
+    tmp_path, monkeypatch, lg
+):
     """
     solve_field 인자 명시 시: executable 체크(PermissionError) 분기 커버.
     Path.exists 패치 금지(pytest 내부에 영향) -> 실제 파일을 만들고 os.access만 False로 둔다.
@@ -330,7 +353,9 @@ def test_get_crval_from_image_explicit_solve_field_not_exec_raises(tmp_path, mon
         mod.get_crval_from_image(img, config=cfgp, logger=lg, solve_field=sf)
 
 
-def test_get_crval_from_image_config_missing_required_keys_raises_keyerror(tmp_path, monkeypatch, lg):
+def test_get_crval_from_image_config_missing_required_keys_raises_keyerror(
+    tmp_path, monkeypatch, lg
+):
     """
     inpar 키 누락 시 KeyError 분기(350-352) 커버.
     """
@@ -341,13 +366,17 @@ def test_get_crval_from_image_config_missing_required_keys_raises_keyerror(tmp_p
 
     # astrometry/settings.cpu.limit 일부러 누락
     cfgp = tmp_path / "cfg_bad.json"
-    cfgp.write_text(json.dumps({"astrometry": {}}, ensure_ascii=False), encoding="utf-8")
+    cfgp.write_text(
+        json.dumps({"astrometry": {}}, ensure_ascii=False), encoding="utf-8"
+    )
 
     # solve-field는 실행되면 안 되므로 여기서 막아도 됨
     monkeypatch.setattr(mod, "_run_solve_field", lambda *a, **k: None, raising=True)
 
     with pytest.raises(KeyError):
-        mod.get_crval_from_image(img, config=cfgp, logger=lg, work_dir=tmp_path / "w", keep_work_dir=True)
+        mod.get_crval_from_image(
+            img, config=cfgp, logger=lg, work_dir=tmp_path / "w", keep_work_dir=True
+        )
 
 
 def test_get_crval_from_image_crval_missing_raises(tmp_path, monkeypatch, lg):
@@ -369,12 +398,21 @@ def test_get_crval_from_image_crval_missing_raises(tmp_path, monkeypatch, lg):
 
     # .new 파일 생성 (CRVAL 없음, 대신 WCS 비슷한 키만 넣어서 candidate 키 로깅 경로 유도)
     solved = work / "img.new"
-    _write_fits(solved, crval1=None, crval2=None, extra_hdr={"CTYPE1": "RA---TAN", "CTYPE2": "DEC--TAN"})
+    _write_fits(
+        solved,
+        crval1=None,
+        crval2=None,
+        extra_hdr={"CTYPE1": "RA---TAN", "CTYPE2": "DEC--TAN"},
+    )
 
-    monkeypatch.setattr(mod, "_find_solved_new_file", lambda *a, **k: solved, raising=True)
+    monkeypatch.setattr(
+        mod, "_find_solved_new_file", lambda *a, **k: solved, raising=True
+    )
 
     with pytest.raises(Exception):
-        mod.get_crval_from_image(img, config=cfgp, logger=lg, work_dir=work, keep_work_dir=True)
+        mod.get_crval_from_image(
+            img, config=cfgp, logger=lg, work_dir=work, keep_work_dir=True
+        )
 
 
 def test_get_crval_from_image_subprocess_error_becomes_runtimeerror_and_keeps_persistent_dir(
@@ -392,14 +430,21 @@ def test_get_crval_from_image_subprocess_error_becomes_runtimeerror_and_keeps_pe
     _write_config(cfgp)
 
     # _run_solve_field가 RuntimeError를 던지도록
-    monkeypatch.setattr(mod, "_run_solve_field", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")), raising=True)
+    monkeypatch.setattr(
+        mod,
+        "_run_solve_field",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+        raising=True,
+    )
 
     # DEFAULT_RES_ROOT를 tmp_path 아래로 바꿔서 테스트가 시스템 경로를 건드리지 않게
     res_root = tmp_path / "res_root"
     monkeypatch.setattr(mod, "DEFAULT_RES_ROOT", res_root, raising=True)
 
     with pytest.raises(RuntimeError):
-        mod.get_crval_from_image(img, config=cfgp, logger=lg, work_dir=None, keep_work_dir=False)
+        mod.get_crval_from_image(
+            img, config=cfgp, logger=lg, work_dir=None, keep_work_dir=False
+        )
 
     assert res_root.exists()
 
@@ -453,13 +498,17 @@ def test_get_crval_from_image_new_file_missing_lists_dir(tmp_path, monkeypatch, 
     monkeypatch.setattr(mod.glob, "glob", lambda pattern: [], raising=True)
 
     with pytest.raises(FileNotFoundError) as e:
-        mod.get_crval_from_image(img, config=cfgp, logger=lg, work_dir=work, keep_work_dir=True)
+        mod.get_crval_from_image(
+            img, config=cfgp, logger=lg, work_dir=work, keep_work_dir=True
+        )
 
     assert "Files=" in str(e.value)
     assert "dummy.txt" in str(e.value)
 
 
-def test_get_crval_from_image_happy_path_and_cleanup_when_keep_false(tmp_path, monkeypatch, lg):
+def test_get_crval_from_image_happy_path_and_cleanup_when_keep_false(
+    tmp_path, monkeypatch, lg
+):
     """
     caller가 work_dir를 명시적으로 준 경우(tmp_created=False),
     keep_work_dir=False면 cleanup(rmtree) 호출이 일어난다.
@@ -506,7 +555,13 @@ def test_get_crvals_from_images_preserves_order_and_nan(tmp_path, monkeypatch, l
         p.write_text("dummy", encoding="utf-8")
 
     def _fake_get_crval_from_image(
-        p, config=None, logger=None, work_dir=None, keep_work_dir=False, solve_field=None, subprocess_env=None
+        p,
+        config=None,
+        logger=None,
+        work_dir=None,
+        keep_work_dir=False,
+        solve_field=None,
+        subprocess_env=None,
     ):
         name = Path(p).name
         if name in ("i1.fits", "i3.fits"):
@@ -514,7 +569,9 @@ def test_get_crvals_from_images_preserves_order_and_nan(tmp_path, monkeypatch, l
         idx = int(name[1])  # i0.fits -> 0
         return (100.0 + idx, 200.0 + idx)
 
-    monkeypatch.setattr(mod, "get_crval_from_image", _fake_get_crval_from_image, raising=True)
+    monkeypatch.setattr(
+        mod, "get_crval_from_image", _fake_get_crval_from_image, raising=True
+    )
 
     cr1, cr2 = mod.get_crvals_from_images(paths, config=None, logger=lg, max_workers=2)
 

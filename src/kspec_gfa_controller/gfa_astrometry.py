@@ -78,7 +78,7 @@ class GFAAstrometry:
         config: str = None,
         logger: logging.Logger = None,
         save_root: Optional[Union[str, Path]] = None,
-):
+    ):
         if config is None:
             config = _get_default_config_path()
         if logger is None:
@@ -92,17 +92,17 @@ class GFAAstrometry:
 
         dirs = self.inpar["paths"]["directories"]
 
-        default_root = self.inpar.get(
-            "paths", {}
-        ).get("save_root", "~/work/DATA/GFADATA/img")
+        default_root = self.inpar.get("paths", {}).get(
+            "save_root", "~/work/DATA/GFADATA/img"
+        )
 
-        self.save_root = Path(
-            save_root or default_root
-        ).expanduser().resolve()
+        self.save_root = Path(save_root or default_root).expanduser().resolve()
 
         self.dir_path = str(self.save_root / dirs["raw_images"])
         self.temp_dir = str(self.save_root / dirs["temp_files"])
-        self.final_astrometry_dir = str(self.save_root / dirs["final_astrometry_images"])
+        self.final_astrometry_dir = str(
+            self.save_root / dirs["final_astrometry_images"]
+        )
 
         star_catalog_root = self.save_root / dirs["star_catalog"]
 
@@ -142,14 +142,22 @@ class GFAAstrometry:
         self._resolve_solve_field_path(log=True)
 
     def _get_subprocess_env(self) -> dict:
-        return self._subprocess_env if self._subprocess_env is not None else os.environ.copy()
+        return (
+            self._subprocess_env
+            if self._subprocess_env is not None
+            else os.environ.copy()
+        )
 
     # -------------------------------
     # ✅ solve-field path resolve + 중복 로그 방지
     # -------------------------------
     def _resolve_solve_field_path(self, log: bool = False) -> str:
         env = self._get_subprocess_env()
-        key = str(env.get("ASTROMETRY_SOLVE_FIELD") or os.environ.get("ASTROMETRY_SOLVE_FIELD") or DEFAULT_SOLVE_FIELD).strip()
+        key = str(
+            env.get("ASTROMETRY_SOLVE_FIELD")
+            or os.environ.get("ASTROMETRY_SOLVE_FIELD")
+            or DEFAULT_SOLVE_FIELD
+        ).strip()
         if (self._solve_field_path is None) or (self._solve_field_key != key):
             p = _get_solve_field_path(env=env)
             self._solve_field_path = p
@@ -174,7 +182,9 @@ class GFAAstrometry:
     # -------------------------------
     # ✅ RA/DEC 파싱(문자열/도 단위 혼합 대응)
     # -------------------------------
-    def _parse_radec_to_deg(self, ra: Union[str, float], dec: Union[str, float]) -> Tuple[float, float]:
+    def _parse_radec_to_deg(
+        self, ra: Union[str, float], dec: Union[str, float]
+    ) -> Tuple[float, float]:
         # 1) 숫자면 degree로 취급
         try:
             ra_f = float(ra)
@@ -216,7 +226,9 @@ class GFAAstrometry:
             return None
         return self._read_radec_from_header(cand[0])
 
-    def _get_reference_radec_from_astro_outputs(self, astro_files: List[str]) -> Optional[Tuple[str, str]]:
+    def _get_reference_radec_from_astro_outputs(
+        self, astro_files: List[str]
+    ) -> Optional[Tuple[str, str]]:
         if not astro_files:
             return None
         fp = astro_files[0]
@@ -256,9 +268,13 @@ class GFAAstrometry:
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
         if corr_files is None:
-            corr_files = sorted(glob.glob(os.path.join(self.temp_dir, corr_glob), recursive=True))
+            corr_files = sorted(
+                glob.glob(os.path.join(self.temp_dir, corr_glob), recursive=True)
+            )
 
-        self.logger.info(f"Building combined star catalog from .corr files: found {len(corr_files)} files.")
+        self.logger.info(
+            f"Building combined star catalog from .corr files: found {len(corr_files)} files."
+        )
         self.logger.info(f"combined_star.fits output will be: {out_path}")
 
         if not corr_files:
@@ -286,14 +302,18 @@ class GFAAstrometry:
                 self.logger.warning(f"Failed reading corr={fp}: {e}")
 
         if not tables:
-            raise RuntimeError(f"All .corr files failed to read. bad(sample)={bad[:10]}")
+            raise RuntimeError(
+                f"All .corr files failed to read. bad(sample)={bad[:10]}"
+            )
 
         combined = vstack(tables, metadata_conflicts="silent")
         combined.write(out_path, overwrite=True)
 
         nrows = len(combined)
         if nrows < int(min_rows):
-            self.logger.warning(f"combined_star.fits created but has very few rows: N={nrows}")
+            self.logger.warning(
+                f"combined_star.fits created but has very few rows: N={nrows}"
+            )
 
         self.logger.info(f"✅ combined_star.fits created: {out_path} (N={nrows})")
 
@@ -337,26 +357,42 @@ class GFAAstrometry:
         cmd = [
             solve_field_path,
             raw_fits_path,
-            "-D", work_dir,
-            "-o", outbase,
+            "-D",
+            work_dir,
+            "-o",
+            outbase,
             "--overwrite",
-            "--corr", corr_path,
+            "--corr",
+            corr_path,
             "--no-plots",
             "--no-verify",
             "--crpix-center",
-            "-X", "X",
-            "-Y", "Y",
-            "-s", "FLUX",
-            "--scale-units", "degwidth",
-            "-L", str(scale_low),
-            "-H", str(scale_high),
-            "--ra", str(ra_in),
-            "--dec", str(dec_in),
-            "--radius", str(radius),
-            "-l", "120",
-            "-c", "0.1",
-            "-E", "2",
-            "--cpulimit", str(cpu_limit),
+            "-X",
+            "X",
+            "-Y",
+            "Y",
+            "-s",
+            "FLUX",
+            "--scale-units",
+            "degwidth",
+            "-L",
+            str(scale_low),
+            "-H",
+            str(scale_high),
+            "--ra",
+            str(ra_in),
+            "--dec",
+            str(dec_in),
+            "--radius",
+            str(radius),
+            "-l",
+            "120",
+            "-c",
+            "0.1",
+            "-E",
+            "2",
+            "--cpulimit",
+            str(cpu_limit),
         ]
 
         self.logger.info(f"[{stem}] Running command: {' '.join(cmd)}")
@@ -417,10 +453,15 @@ class GFAAstrometry:
             with fits.open(out_fits_path, mode="update", memmap=False) as hdul:
                 hdr = hdul[0].header
                 hdr["RA"] = (str(ra_in), "Input RA used for astrometry (session key)")
-                hdr["DEC"] = (str(dec_in), "Input DEC used for astrometry (session key)")
+                hdr["DEC"] = (
+                    str(dec_in),
+                    "Input DEC used for astrometry (session key)",
+                )
                 hdul.flush()
         except Exception as e:
-            self.logger.warning(f"[{stem}] Failed to write RA/DEC into astro header: {e}")
+            self.logger.warning(
+                f"[{stem}] Failed to write RA/DEC into astro header: {e}"
+            )
 
         try:
             _, hdr = fits.getdata(out_fits_path, ext=0, header=True)
@@ -461,7 +502,9 @@ class GFAAstrometry:
         os.makedirs(self.final_astrometry_dir, exist_ok=True)
         os.makedirs(self.star_catalog_dir, exist_ok=True)
 
-        existing_outputs = sorted(glob.glob(os.path.join(self.final_astrometry_dir, "astro_*.fits")))
+        existing_outputs = sorted(
+            glob.glob(os.path.join(self.final_astrometry_dir, "astro_*.fits"))
+        )
 
         # ✅ 재사용 경로: existing astro가 있고 force=False일 때
         if existing_outputs and not force:
@@ -470,7 +513,9 @@ class GFAAstrometry:
             astro_radec = self._get_reference_radec_from_astro_outputs(existing_outputs)
 
             if cur_radec is not None and astro_radec is not None:
-                sep_arcsec = self._angular_sep_arcsec(cur_radec[0], cur_radec[1], astro_radec[0], astro_radec[1])
+                sep_arcsec = self._angular_sep_arcsec(
+                    cur_radec[0], cur_radec[1], astro_radec[0], astro_radec[1]
+                )
                 if sep_arcsec > float(self._session_radec_tol_arcsec):
                     self.logger.info(
                         "Astrometry outputs exist but session RA/DEC mismatch → re-running astrometry.\n"
@@ -480,7 +525,9 @@ class GFAAstrometry:
                     )
                     # 섞임 방지: 기존 astro 제거 후 강제 재생성
                     deleted = self._delete_astro_outputs()
-                    self.logger.info(f"Deleted {deleted} old astro outputs before re-run.")
+                    self.logger.info(
+                        f"Deleted {deleted} old astro outputs before re-run."
+                    )
                     force = True  # 아래 로직으로 내려가서 preproc 수행
                 else:
                     self.logger.info(
@@ -493,10 +540,16 @@ class GFAAstrometry:
                         try:
                             self.build_combined_star_from_corr(corr_files=None)
                         except Exception as e:
-                            self.logger.warning(f"Star catalog build skipped/failed: {e}")
+                            self.logger.warning(
+                                f"Star catalog build skipped/failed: {e}"
+                            )
 
-                    self.logger.info(f"combined_star expected at: {self.combined_star_path}")
-                    self.logger.info(f"combined_star exists? {os.path.exists(self.combined_star_path)}")
+                    self.logger.info(
+                        f"combined_star expected at: {self.combined_star_path}"
+                    )
+                    self.logger.info(
+                        f"combined_star exists? {os.path.exists(self.combined_star_path)}"
+                    )
                     return existing_outputs
             else:
                 # raw/input이 없거나 astro에 RA/DEC가 없으면 보수적으로 재사용(로그만 남김)
@@ -519,12 +572,18 @@ class GFAAstrometry:
                     except Exception as e:
                         self.logger.warning(f"Star catalog build skipped/failed: {e}")
 
-                self.logger.info(f"combined_star expected at: {self.combined_star_path}")
-                self.logger.info(f"combined_star exists? {os.path.exists(self.combined_star_path)}")
+                self.logger.info(
+                    f"combined_star expected at: {self.combined_star_path}"
+                )
+                self.logger.info(
+                    f"combined_star exists? {os.path.exists(self.combined_star_path)}"
+                )
                 return existing_outputs
 
         # ✅ 여기부터는: outputs 없거나(force=True 포함) → preproc 실행
-        self.logger.info("Astrometry outputs missing or force=True → running astrometry preprocessing...")
+        self.logger.info(
+            "Astrometry outputs missing or force=True → running astrometry preprocessing..."
+        )
 
         results, corr_ok = self.preproc(
             input_files=input_files,
@@ -532,7 +591,9 @@ class GFAAstrometry:
             run_missing_only=run_missing_only,
         )
 
-        existing_outputs = sorted(glob.glob(os.path.join(self.final_astrometry_dir, "astro_*.fits")))
+        existing_outputs = sorted(
+            glob.glob(os.path.join(self.final_astrometry_dir, "astro_*.fits"))
+        )
         if not existing_outputs:
             raise RuntimeError(
                 f"Astrometry expected outputs not found in {self.final_astrometry_dir} (astro_*.fits)"
@@ -541,7 +602,9 @@ class GFAAstrometry:
         if build_star_catalog:
             try:
                 if corr_ok:
-                    self.logger.info(f"Building combined_star.fits from this run corr_ok={len(corr_ok)} files")
+                    self.logger.info(
+                        f"Building combined_star.fits from this run corr_ok={len(corr_ok)} files"
+                    )
                     self.build_combined_star_from_corr(corr_files=corr_ok)
                 else:
                     msg = "No corr_ok collected from this run."
@@ -555,7 +618,9 @@ class GFAAstrometry:
                 self.logger.warning(f"Star catalog build skipped/failed: {e}")
 
         self.logger.info(f"combined_star expected at: {self.combined_star_path}")
-        self.logger.info(f"combined_star exists? {os.path.exists(self.combined_star_path)}")
+        self.logger.info(
+            f"combined_star exists? {os.path.exists(self.combined_star_path)}"
+        )
 
         return existing_outputs
 
@@ -578,8 +643,10 @@ class GFAAstrometry:
 
         os.makedirs(self.final_astrometry_dir, exist_ok=True)
 
-        existing_outputs = sorted(glob.glob(os.path.join(self.final_astrometry_dir, "astro_*.fits")))
-        astro_dir_empty = (len(existing_outputs) == 0)
+        existing_outputs = sorted(
+            glob.glob(os.path.join(self.final_astrometry_dir, "astro_*.fits"))
+        )
+        astro_dir_empty = len(existing_outputs) == 0
 
         to_run: List[str] = []
 
@@ -588,11 +655,15 @@ class GFAAstrometry:
             to_run = input_paths
         else:
             if astro_dir_empty:
-                self.logger.info("No astrometry results found (astro dir empty) → running FULL astrometry.")
+                self.logger.info(
+                    "No astrometry results found (astro dir empty) → running FULL astrometry."
+                )
                 to_run = input_paths
             else:
                 if not run_missing_only:
-                    self.logger.info("Astrometry results already exist and run_missing_only=False → skipping astrometry.")
+                    self.logger.info(
+                        "Astrometry results already exist and run_missing_only=False → skipping astrometry."
+                    )
                     return [], []
 
                 existing_set = set(os.path.basename(p) for p in existing_outputs)
@@ -604,9 +675,13 @@ class GFAAstrometry:
                         to_run.append(raw_path)
 
                 if to_run:
-                    self.logger.info(f"Astrometry results exist → running ONLY missing outputs: {len(to_run)} files.")
+                    self.logger.info(
+                        f"Astrometry results exist → running ONLY missing outputs: {len(to_run)} files."
+                    )
                 else:
-                    self.logger.info("All expected astrometry outputs already exist → nothing to do.")
+                    self.logger.info(
+                        "All expected astrometry outputs already exist → nothing to do."
+                    )
                     return [], []
 
         cpu_limit = int(self.inpar["settings"]["cpu"]["limit"])
@@ -630,7 +705,9 @@ class GFAAstrometry:
                     failed.append(path)
 
         if failed:
-            self.logger.warning(f"{len(failed)} files failed: {[os.path.basename(x) for x in failed]}")
+            self.logger.warning(
+                f"{len(failed)} files failed: {[os.path.basename(x) for x in failed]}"
+            )
 
         self.logger.info(
             f"Preprocessing(astrometry) completed in {time.time() - start:.2f} seconds. "
