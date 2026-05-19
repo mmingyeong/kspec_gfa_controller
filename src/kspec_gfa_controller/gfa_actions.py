@@ -161,7 +161,6 @@ class GFAActions:
         ExpTime: float = 1.0,
         ExpNum: int = 1,
         Binning: int = 4,
-        SaveCombineRaw: bool = True,
         *,
         packet_size: int = None,
         cam_ipd: int = None,
@@ -222,10 +221,12 @@ class GFAActions:
             for exp_idx in range(ExpNum):
                 self.env.logger.info(
                     f"[grab] exposure {exp_idx + 1}/{ExpNum}, "
-                    f"output_dir={grab_save_path}, SaveCombineRaw={SaveCombineRaw}"
+                    f"output_dir={grab_save_path}"
                 )
 
-                save_intermediate = SaveCombineRaw if ExpNum > 1 else False
+                # Do not save individual pre-combine frames to disk.
+                # Images are kept in memory and only the final FITS is saved below.
+                save_intermediate = False
 
                 tasks = [
                     self.env.controller.grabone(
@@ -281,15 +282,9 @@ class GFAActions:
                 grab_files.append(str(grab_save_path / filename))
 
             if CamNum == 0:
-                msg = (
-                    f"Images grabbed from all cameras. "
-                    f"ExpNum={ExpNum}, SaveCombineRaw={SaveCombineRaw}."
-                )
+                msg = f"Images grabbed from all cameras. ExpNum={ExpNum}."
             else:
-                msg = (
-                    f"Images grabbed from cameras {cam_list}. "
-                    f"ExpNum={ExpNum}, SaveCombineRaw={SaveCombineRaw}."
-                )
+                msg = f"Images grabbed from cameras {cam_list}. ExpNum={ExpNum}."
 
             if timeout_cameras:
                 msg += f" Timeout: {timeout_cameras}"
@@ -321,7 +316,6 @@ class GFAActions:
         ExpTime: float = 1.0,
         ExpNum: int = 1,
         SaveGrabRaw: bool = True,
-        SaveCombineRaw: bool = True,
         ra: str = None,
         dec: str = None,
     ) -> Dict[str, Any]:
@@ -342,7 +336,7 @@ class GFAActions:
         self.env.logger.info(f"[guiding] save_root={save_root}")
         self.env.logger.info(f"[guiding] dirs={dirs}")
         self.env.logger.info(
-            f"[guiding] SaveGrabRaw={SaveGrabRaw}, SaveCombineRaw={SaveCombineRaw}, "
+            f"[guiding] SaveGrabRaw={SaveGrabRaw}, "
             f"raw_save_path={raw_save_path}, guiding_save_path={guiding_save_path}"
         )
 
@@ -365,7 +359,6 @@ class GFAActions:
                 ExpTime=ExpTime,
                 ExpNum=ExpNum,
                 Binning=4,
-                SaveCombineRaw=SaveCombineRaw,
                 path=str(raw_save_path),
                 ra=ra,
                 dec=dec,
@@ -475,7 +468,6 @@ class GFAActions:
         Binning: int = 4,
         CamNum: int = 0,
         SaveGrabRaw: bool = True,
-        SaveCombineRaw: bool = True,
         clear_dir: bool = True,
     ) -> Dict[str, Any]:
         save_root, dirs = self._get_save_root_and_dirs()
@@ -493,7 +485,7 @@ class GFAActions:
         self.env.logger.info(f"[pointing] save_root={save_root}")
         self.env.logger.info(f"[pointing] dirs={dirs}")
         self.env.logger.info(
-            f"[pointing] SaveGrabRaw={SaveGrabRaw}, SaveCombineRaw={SaveCombineRaw}, "
+            f"[pointing] SaveGrabRaw={SaveGrabRaw}, "
             f"raw_save_path={pointing_raw_path}, pointing_save_path={pointing_save_path}"
         )
 
@@ -534,7 +526,6 @@ class GFAActions:
                 ExpTime=ExpTime,
                 ExpNum=ExpNum,
                 Binning=Binning,
-                SaveCombineRaw=SaveCombineRaw,
                 path=str(pointing_raw_path),
                 ra=ra,
                 dec=dec,
