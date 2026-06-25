@@ -12,9 +12,20 @@
           "star_catalog": "star_catalog",
           "grab_images": "grab",
           "guiding_save": "guiding_save",
-          "pointing_save": "pointing_save"
+          "pointing_save": "pointing_save",
+            "unclean_images": "unclean"
         }
       },
+    "pointing_filter": {
+        "min_valid_images": 5,
+        "min_std_bg": 0.3,
+        "min_peaks": 10,
+        "min_brightest_flux": 3000,
+        "dao": {
+          "fwhm": 3.0,
+          "sigma_threshold": 5.0
+        }
+    },
     "settings": {
         "cpu": {
             "limit": 120
