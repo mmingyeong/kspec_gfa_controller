@@ -604,88 +604,188 @@ class GFAActions:
     ) -> Dict[str, Any]:
         """
         Relaxed pointing image filter.
+
         Reject only obviously bad images before astrometry.
+
+        Environment:
+            Python 3.10
+            NumPy 1.26.4
+            Astropy 5.3.4
+            Photutils 1.13.0
         """
-    
+
         cfg = self.env.astrometry.inpar["pointing_filter"]
-    
-        min_std_bg = cfg["min_std_bg"]
-        min_peaks = cfg["min_peaks"]
-        min_brightest_flux = cfg["min_brightest_flux"]
-    
-        fwhm = cfg["dao"]["fwhm"]
-        sigma_threshold = cfg["dao"]["sigma_threshold"]
-    
+
+        min_std_bg = float(cfg["min_std_bg"])
+        min_peaks = int(cfg["min_peaks"])
+        min_brightest_flux = float(
+            cfg["min_brightest_flux"]
+        )
+
+        fwhm = float(cfg["dao"]["fwhm"])
+        sigma_threshold = float(
+            cfg["dao"]["sigma_threshold"]
+        )
+
         reasons = []
 
         try:
+            # ---------------------------------------------------------
+            # Read FITS
+            # ---------------------------------------------------------
             img = fits.getdata(str(fits_path))
-            img = np.asarray(img, dtype=float)
+            img = np.asarray(img, dtype=np.float64)
 
             if img.ndim != 2:
-                reasons.append(f"invalid_dimension={img.ndim}")
                 return {
                     "passed": False,
                     "n_peaks": 0,
                     "brightest_flux": 0.0,
                     "std_bg": 0.0,
-                    "reasons": reasons,
+                    "reasons": [
+                        f"invalid_dimension={img.ndim}"
+                    ],
                 }
 
-            finite_fraction = np.mean(np.isfinite(img))
-            if finite_fraction < 0.99:
-                reasons.append(f"low_finite_fraction={finite_fraction:.3f}<0.99")
-
-            mean_bg, median_bg, std_bg = sigma_clipped_stats(
-                img,
-                sigma=3.0,
+            # ---------------------------------------------------------
+            # Finite pixel check
+            # ---------------------------------------------------------
+            finite_mask = np.isfinite(img)
+            finite_fraction = float(
+                np.mean(finite_mask)
             )
+
+            if finite_fraction < 0.99:
+                reasons.append(
+                    f"low_finite_fraction="
+                    f"{finite_fraction:.3f}<0.99"
+                )
+
+            if not np.any(finite_mask):
+                return {
+                    "passed": False,
+                    "n_peaks": 0,
+                    "brightest_flux": 0.0,
+                    "std_bg": 0.0,
+                    "reasons": [
+                        "no_finite_pixels"
+                    ],
+                }
+
+            # ---------------------------------------------------------
+            # Replace invalid pixels
+            # ---------------------------------------------------------
+            median_valid = float(
+                np.median(img[finite_mask])
+            )
+
+            work_img = img.copy()
+            work_img[~finite_mask] = median_valid
+
+            # ---------------------------------------------------------
+            # Background statistics
+            # ---------------------------------------------------------
+            mean_bg, median_bg, std_bg = (
+                sigma_clipped_stats(
+                    work_img,
+                    sigma=3.0,
+                )
+            )
+
+            mean_bg = float(mean_bg)
+            median_bg = float(median_bg)
+            std_bg = float(std_bg)
 
             n_peaks = 0
             brightest_flux = 0.0
 
-            if std_bg > 0:
+            # ---------------------------------------------------------
+            # DAOStarFinder
+            # ---------------------------------------------------------
+            if np.isfinite(std_bg) and std_bg > 0:
+
                 finder = DAOStarFinder(
                     fwhm=fwhm,
                     threshold=sigma_threshold * std_bg,
                 )
 
-                sources = finder(img - median_bg)
+                sources = finder(
+                    work_img - median_bg
+                )
 
                 if sources is not None:
-                    n_peaks = len(sources)
+                    n_peaks = int(len(sources))
 
-                    if n_peaks > 0 and "flux" in sources.colnames:
-                        brightest_flux = float(np.max(sources["flux"]))
+                    if (
+                        n_peaks > 0
+                        and "flux" in sources.colnames
+                    ):
+                        flux = np.asarray(
+                            sources["flux"],
+                            dtype=np.float64,
+                        )
 
-            if std_bg < min_std_bg:
-                reasons.append(f"low_std_bg={std_bg:.2f}<MIN_STD_BG={min_std_bg}")
+                        flux = flux[np.isfinite(flux)]
+
+                        if flux.size > 0:
+                            brightest_flux = float(
+                                np.max(flux)
+                            )
+
+            # ---------------------------------------------------------
+            # Quality criteria
+            # ---------------------------------------------------------
+            if (
+                not np.isfinite(std_bg)
+                or std_bg < min_std_bg
+            ):
+                reasons.append(
+                    f"low_std_bg={std_bg:.2f}"
+                    f"<MIN_STD_BG={min_std_bg}"
+                )
 
             if n_peaks < min_peaks:
-                reasons.append(f"few_peaks={n_peaks}<MIN_PEAKS={min_peaks}")
-
-            if brightest_flux < min_brightest_flux:
                 reasons.append(
-                    f"low_brightest_flux={brightest_flux:.2f}"
-                    f"<MIN_BRIGHTEST_FLUX={min_brightest_flux}"
+                    f"few_peaks={n_peaks}"
+                    f"<MIN_PEAKS={min_peaks}"
+                )
+
+            if (
+                not np.isfinite(brightest_flux)
+                or brightest_flux < min_brightest_flux
+            ):
+                reasons.append(
+                    f"low_brightest_flux="
+                    f"{brightest_flux:.2f}"
+                    f"<MIN_BRIGHTEST_FLUX="
+                    f"{min_brightest_flux}"
                 )
 
             return {
                 "passed": len(reasons) == 0,
                 "n_peaks": n_peaks,
                 "brightest_flux": brightest_flux,
-                "std_bg": float(std_bg),
+                "std_bg": std_bg,
                 "reasons": reasons,
             }
 
         except Exception as e:
+            self.env.logger.exception(
+                f"[pointing filter] error while evaluating "
+                f"{fits_path}"
+            )
+
             return {
                 "passed": False,
                 "n_peaks": 0,
                 "brightest_flux": 0.0,
                 "std_bg": 0.0,
-                "reasons": [f"filter_error={e}"],
+                "reasons": [
+                    f"filter_error="
+                    f"{type(e).__name__}: {e}"
+                ],
             }
+
 
     def _move_with_unique_name(self, src: Path, dst_dir: Path) -> Path:
         dst_dir.mkdir(parents=True, exist_ok=True)
@@ -779,7 +879,7 @@ class GFAActions:
         Binning: int = 4,
         CamNum: int = 0,
         SaveGrabRaw: bool = True,
-        clear_dir: bool = True,
+        clear_dir: bool = False,
         MaxGrabRetry: int = 3,
     ) -> Dict[str, Any]:
         save_root, dirs = self._get_save_root_and_dirs()
@@ -856,26 +956,26 @@ class GFAActions:
                     f"[pointing] grab/filter attempt {attempt}/{MaxGrabRetry}"
                 )
 
-                if clear_dir:
-                    self.env.astrometry.clear_raw_files()
+                # if clear_dir:
+                #     self.env.astrometry.clear_raw_files()
 
-                grab_result = await self.grab(
-                    CamNum=CamNum,
-                    ExpTime=ExpTime,
-                    ExpNum=ExpNum,
-                    Binning=Binning,
-                    path=str(pointing_raw_path),
-                    ra=ra,
-                    dec=dec,
-                )
+                # grab_result = await self.grab(
+                #     CamNum=CamNum,
+                #     ExpTime=ExpTime,
+                #     ExpNum=ExpNum,
+                #     Binning=Binning,
+                #     path=str(pointing_raw_path),
+                #     ra=ra,
+                #     dec=dec,
+                # )
 
-                if grab_result.get("status") != "success":
-                    return self._generate_response(
-                        "error",
-                        f"Pointing image grab failed: {grab_result.get('message')}",
-                        raw_path=str(pointing_raw_path),
-                        save_path=str(pointing_save_path),
-                    )
+                # if grab_result.get("status") != "success":
+                #     return self._generate_response(
+                #         "error",
+                #         f"Pointing image grab failed: {grab_result.get('message')}",
+                #         raw_path=str(pointing_raw_path),
+                #         save_path=str(pointing_save_path),
+                #     )
 
                 filter_result = self._filter_pointing_raw_images(
                     raw_path=pointing_raw_path,
