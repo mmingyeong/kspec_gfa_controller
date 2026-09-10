@@ -1,33 +1,41 @@
-[tool.poetry]
+[project]
 name = "kspec-gfa-controller"
-version = "0.6.0"
+version = "1.0.0"
 description = "The Controller software for KSPEC-GFA Camera"
-authors = ["Mingyeong Yang <mmingyeong@kasi.re.kr>"]
+authors = [
+    { name = "Mingyeong Yang", email = "mmingyeong@kasi.re.kr" }
+]
 readme = "README.md"
-packages = [{ include = "kspec_gfa_controller", from = "src" }]
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "numpy==1.26.4",
+    "scipy==1.13.1",
+    "astropy==7.1.1",
+    "photutils==2.0.2",
+    "scikit-image==0.22.0",
+    "pypylon==4.0.0",
+    "pillow==10.0.0",
+    "PyYAML==6.0.3",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.11,<3.12"
-numpy = "1.26.4"
-scipy = "1.13.1"
-astropy = "7.1.1"
-photutils = "2.0.2"
-scikit-image = "0.22.0"
-datetime = "5.5"
-asyncio = "3.4.3"
-pypylon = "4.0.0"
-pillow = "10.0.0"
-
-[tool.poetry.scripts]
+[project.scripts]
 set-permissions = "scripts.set_permissions:main"
 
-[tool.poetry.group.dev.dependencies]
-matplotlib = "^3.9.2"
-ruff = "^0.6.2"
+[tool.poetry]
+packages = [
+    { include = "kspec_gfa_controller", from = "src" }
+]
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.poetry.group.dev.dependencies]
+matplotlib = "3.11.1"
+pytest = "9.1.1"
+pytest-cov = "7.1.0"
+pytest-asyncio = "1.4.0"
+ruff = "0.16.6"
 
 [tool.ruff.lint]
 ignore = ["E402"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
