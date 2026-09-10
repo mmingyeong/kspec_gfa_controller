@@ -104,3 +104,10 @@
 - **Code Optimization**:
   - Used a dictionary to store camera statuses (`{"Cam1": True, "Cam2": False, ...}`) for improved accessibility.
   - Verified changes with runtime tests to ensure expected behavior.
+
+### v1.2.0 - Final Release for K-SPEC GFA Publication (2026-06-XX)
+- **Publication Freeze**:
+  - Fixed and frozen as the baseline software version for the K-SPEC GFA (Guider/Focus/Alignment) instrument paper.
+- **Core Capabilities & Stability**:
+  - Finalized multi-camera asynchronous acquisition (`grab()`, `graball()`), FITS image generation, and robust Astrometry/Guiding pipelines.
+  - Standardized JSON command outputs and `/opt/kspec_gfa_controller/` deployment permission workflows.
