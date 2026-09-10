@@ -6,6 +6,7 @@ import importlib
 from pathlib import Path
 
 import pytest
+import numpy as np
 
 
 # -------------------------
@@ -27,10 +28,21 @@ class FakeLogger:
     def error(self, m):
         self.logs.append(("error", str(m)))
 
+    def exception(self, m):
+        self.logs.append(("exception", str(m)))
+
+
+class FakeImage:
+    def __init__(self):
+        self.save_calls = []
+
+    def save_fits(self, **kwargs):
+        self.save_calls.append(kwargs)
+
 
 class FakeController:
     def __init__(self, grabone_result=None):
-        self._grabone_result = grabone_result if grabone_result is not None else []
+        self._grabone_result = grabone_result
         self.grabone_calls = []
         self.grab_calls = []
         self.ping_calls = []
@@ -39,6 +51,7 @@ class FakeController:
 
         self.open_all_called = 0
         self.close_all_called = 0
+        self.img_class = FakeImage()
 
     async def open_all_cameras(self):
         self.open_all_called += 1
@@ -50,7 +63,18 @@ class FakeController:
 
     async def grabone(self, **kwargs):
         self.grabone_calls.append(kwargs)
-        return list(self._grabone_result)
+        cam = kwargs["CamNum"]
+        if callable(self._grabone_result):
+            return self._grabone_result(cam)
+        if isinstance(self._grabone_result, dict):
+            return dict(self._grabone_result)
+        timeout_cameras = set(self._grabone_result or [])
+        return {
+            "cam_num": cam,
+            "timeout": cam in timeout_cameras,
+            "serial": f"SERIAL{cam}",
+            "image": [[cam]],
+        }
 
     async def grab(self, CamNum, ExpTime, Binning, **kwargs):
         self.grab_calls.append((CamNum, ExpTime, Binning, kwargs))
@@ -89,6 +113,26 @@ class FakeAstrometry:
                 "/tmp/astro_2.fits",
             ]
         )
+        self.final_astrometry_dir = "/tmp/astrodir"
+        self.inpar = {
+            "paths": {
+                "save_root": None,
+                "directories": {
+                    "grab_images": "grab",
+                    "raw_images": "raw",
+                    "guiding_save": "guiding_save",
+                    "pointing_save": "pointing_save",
+                    "unclean_images": "unclean",
+                },
+            },
+            "pointing_filter": {
+                "min_valid_images": 1,
+                "min_std_bg": 1.0,
+                "min_peaks": 1,
+                "min_brightest_flux": 1.0,
+                "dao": {"fwhm": 3.0, "sigma_threshold": 5.0},
+            },
+        }
 
     def set_subprocess_env(self, env: dict):
         self.subprocess_env_set = env
@@ -125,6 +169,7 @@ class FakeEnv:
         self.astrometry = astrometry if astrometry is not None else FakeAstrometry()
         self.guider = guider if guider is not None else FakeGuider()
         self.shutdown_called = 0
+        self.save_root = None
 
     def shutdown(self):
         self.shutdown_called += 1
@@ -137,7 +182,7 @@ class FakeEnv:
 def ga_module(monkeypatch):
     """
     gfa_actions import 시 SciPy로 내려가는 체인을 끊기 위해,
-    gfa_environment / gfa_logger / gfa_getcrval 를 sys.modules에 fake로 주입 후 import.
+    gfa_environment / gfa_logger 를 sys.modules에 fake로 주입 후 import.
     """
     pkg = "kspec_gfa_controller"
 
@@ -165,7 +210,7 @@ def ga_module(monkeypatch):
     # fake gfa_environment (SciPy 안 타게)
     m_env = types.ModuleType(f"{pkg}.gfa_environment")
 
-    def _fake_create_environment(*, role):
+    def _fake_create_environment(*, role, save_root=None):
         return FakeEnv()
 
     class _FakeGFAEnvironment:
@@ -174,21 +219,8 @@ def ga_module(monkeypatch):
     m_env.create_environment = _fake_create_environment
     m_env.GFAEnvironment = _FakeGFAEnvironment
 
-    # fake gfa_getcrval (pointing에서 import됨)
-    m_crval = types.ModuleType(f"{pkg}.gfa_getcrval")
-
-    def _fake_get_crvals_from_images(images, max_workers=4):
-        return ([1.0] * len(images), [2.0] * len(images))
-
-    def _fake_get_crval_from_image(image):
-        return (1.0, 2.0)
-
-    m_crval.get_crvals_from_images = _fake_get_crvals_from_images
-    m_crval.get_crval_from_image = _fake_get_crval_from_image
-
     monkeypatch.setitem(sys.modules, f"{pkg}.gfa_logger", m_logger)
     monkeypatch.setitem(sys.modules, f"{pkg}.gfa_environment", m_env)
-    monkeypatch.setitem(sys.modules, f"{pkg}.gfa_getcrval", m_crval)
 
     # 이제 안전하게 import
     mod = importlib.import_module(f"{pkg}.gfa_actions")
@@ -196,8 +228,50 @@ def ga_module(monkeypatch):
 
 
 @pytest.fixture
-def actions(ga_module):
-    return ga_module.GFAActions(env=FakeEnv())
+def actions(ga_module, tmp_path, monkeypatch):
+    env = FakeEnv()
+    env.save_root = tmp_path
+    action = ga_module.GFAActions(env=env)
+    monkeypatch.setattr(action, "_debug_path_block", lambda *a, **k: None)
+    return action
+
+
+def prepare_successful_pipeline(actions, monkeypatch, passed_files=None):
+    passed_files = passed_files or ["/tmp/raw/a.fits"]
+
+    async def fake_grab(**kwargs):
+        return {"status": "success", "message": "ok", "grab_files": passed_files}
+
+    monkeypatch.setattr(actions, "grab", fake_grab)
+    monkeypatch.setattr(
+        actions,
+        "_filter_pointing_raw_images",
+        lambda **kwargs: {
+            "passed_files": list(passed_files),
+            "failed_files": [],
+            "n_passed": len(passed_files),
+            "n_failed": 0,
+        },
+    )
+
+
+def patch_fits_crvals(monkeypatch, crval1=1.0, crval2=2.0):
+    class FakeHDU:
+        header = {"CRVAL1": crval1, "CRVAL2": crval2}
+
+    class FakeHDUL(list):
+        def __init__(self):
+            super().__init__([FakeHDU()])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_actions.fits.open", lambda path: FakeHDUL()
+    )
 
 
 # -------------------------
@@ -206,15 +280,15 @@ def actions(ga_module):
 def test_init_env_none_uses_create_environment(monkeypatch, ga_module):
     calls = []
 
-    def fake_create_environment(*, role):
-        calls.append(role)
+    def fake_create_environment(*, role, save_root=None):
+        calls.append((role, save_root))
         return FakeEnv()
 
     monkeypatch.setattr(ga_module, "create_environment", fake_create_environment)
     act = ga_module.GFAActions(env=None)
 
     assert isinstance(act.env, FakeEnv)
-    assert calls == ["plate"]
+    assert calls == [("plate", None)]
 
 
 # -------------------------
@@ -249,7 +323,7 @@ async def test_grab_single_camera_success_message(actions, monkeypatch):
         dec="2",
     )
     assert r["status"] == "success"
-    assert "camera 2" in r["message"].lower()
+    assert "cameras [2]" in r["message"].lower()
 
     assert actions.env.controller.open_all_called == 1
     assert actions.env.controller.close_all_called == 1
@@ -293,7 +367,12 @@ async def test_grab_all_cameras_aggregates_timeouts(actions, monkeypatch):
 
     async def fake_grabone(**kwargs):
         cam = kwargs["CamNum"]
-        return [cam] if cam in (1, 3) else []
+        return {
+            "cam_num": cam,
+            "timeout": cam in (1, 3),
+            "serial": f"SERIAL{cam}",
+            "image": [[cam]],
+        }
 
     actions.env.controller.grabone = fake_grabone
 
@@ -318,7 +397,13 @@ async def test_grab_camera_list(actions, monkeypatch):
     )
 
     async def fake_grabone(**kwargs):
-        return [kwargs["CamNum"]] if kwargs["CamNum"] == 5 else []
+        cam = kwargs["CamNum"]
+        return {
+            "cam_num": cam,
+            "timeout": cam == 5,
+            "serial": f"SERIAL{cam}",
+            "image": [[cam]],
+        }
 
     actions.env.camera_ids = [1, 2, 3, 4, 5]
     actions.env.controller.grabone = fake_grabone
@@ -357,17 +442,13 @@ async def test_guiding_success_no_save(actions, monkeypatch):
     )
     monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.listdir", lambda p: [])
 
-    r = await actions.guiding(ExpTime=2.0, save=False, ra="1", dec="2")
+    prepare_successful_pipeline(actions, monkeypatch)
+    r = await actions.guiding(
+        ExpTime=2.0, SaveGrabRaw=False, ra="1", dec="2"
+    )
     assert r["status"] == "success"
     assert "Offsets:" in r["message"]
     assert "fdx" in r and "fdy" in r and "fwhm" in r
-
-    # guiding()은 현재 grab()을 실제로 호출하지 않음(코드상 pass)
-    assert len(actions.env.controller.grab_calls) == 0
-
-    # open/close는 수행됨
-    assert actions.env.controller.open_all_called == 1
-    assert actions.env.controller.close_all_called == 1
 
     # clean env가 astrometry로 세팅됨
     assert actions.env.astrometry.subprocess_env_set is not None
@@ -379,7 +460,7 @@ async def test_guiding_success_no_save(actions, monkeypatch):
     assert actions.env.guider.exe_called == 1
 
     # raw clear 호출 (신규 API)
-    assert actions.env.astrometry.clear_raw_called == 1
+    assert actions.env.astrometry.clear_raw_called == 2
 
     # 응답에 astrometry_files basename 리스트 포함
     assert "astrometry_files" in r
@@ -392,15 +473,7 @@ async def test_guiding_success_with_save_and_copy(actions, monkeypatch):
         "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
     )
 
-    # raw_save_path에 파일이 있는 것처럼
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.os.listdir",
-        lambda p: ["a.fits", "not_a_file"],
-    )
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.os.path.isfile",
-        lambda p: str(p).endswith("a.fits"),
-    )
+    prepare_successful_pipeline(actions, monkeypatch, ["/tmp/raw/a.fits"])
 
     copy_calls = []
 
@@ -409,7 +482,9 @@ async def test_guiding_success_with_save_and_copy(actions, monkeypatch):
 
     monkeypatch.setattr("kspec_gfa_controller.gfa_actions.shutil.copy2", fake_copy2)
 
-    r = await actions.guiding(ExpTime=1.5, save=True, ra="3", dec="4")
+    r = await actions.guiding(
+        ExpTime=1.5, SaveGrabRaw=True, ra="3", dec="4"
+    )
     assert r["status"] == "success"
 
     # a.fits만 복사됨
@@ -418,8 +493,8 @@ async def test_guiding_success_with_save_and_copy(actions, monkeypatch):
     src_norm = os.path.normpath(src)
     dst_norm = os.path.normpath(dst)
 
-    assert src_norm.endswith(os.path.normpath(os.path.join("img", "raw", "a.fits")))
-    assert os.path.normpath(os.path.join("img", "grab")) in dst_norm
+    assert src_norm.endswith(os.path.normpath(os.path.join("raw", "a.fits")))
+    assert os.path.normpath("guiding_save") in dst_norm
     assert dst_norm.endswith(os.path.normpath("a.fits"))
 
 
@@ -431,7 +506,8 @@ async def test_guiding_fwhm_nonfloat_becomes_zero(actions, monkeypatch):
     )
     monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.listdir", lambda p: [])
 
-    r = await actions.guiding()
+    prepare_successful_pipeline(actions, monkeypatch)
+    r = await actions.guiding(SaveGrabRaw=False)
     assert r["status"] == "success"
     assert r["fwhm"] == 0.0
 
@@ -447,7 +523,8 @@ async def test_guiding_exception_returns_error(actions, monkeypatch):
     )
     monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.listdir", lambda p: [])
 
-    r = await actions.guiding()
+    prepare_successful_pipeline(actions, monkeypatch)
+    r = await actions.guiding(SaveGrabRaw=False)
     assert r["status"] == "error"
     assert "guiding failed" in r["message"].lower()
 
@@ -461,43 +538,21 @@ async def test_pointing_success(actions, monkeypatch):
         "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
     )
 
-    removed = []
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.os.remove", lambda p: removed.append(p)
-    )
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.os.path.isfile", lambda p: True
-    )
-
-    # grab 이후 pointing_raw_path에 fits 2개가 있는 것처럼
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.os.listdir", lambda p: ["a.fits", "b.fits"]
-    )
-
-    # ✅ 여기 추가: Path.glob("*.fits")도 2개 반환하도록
-    def fake_glob(self, pattern):
-        if pattern == "*.fits":
-            return [Path("a.fits"), Path("b.fits")]
-        return []
-
-    monkeypatch.setattr(Path, "glob", fake_glob, raising=True)
-
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.get_crvals_from_images",
-        lambda images, max_workers: ([1.0] * len(images), [2.0] * len(images)),
-    )
+    prepare_successful_pipeline(actions, monkeypatch, ["/tmp/raw/a.fits"])
+    actions.env.astrometry._ensure_outputs = [
+        "/tmp/astro_a.fits", "/tmp/astro_b.fits"
+    ]
+    patch_fits_crvals(monkeypatch)
 
     r = await actions.pointing(
         ra="1",
         dec="2",
         CamNum=0,
-        save_by_date=False,
         clear_dir=True,
-        max_workers=3,
-        save=False,
+        SaveGrabRaw=False,
     )
     assert r["status"] == "success"
-    assert r["images"] == ["a.fits", "b.fits"]
+    assert r["images"] == ["astro_a.fits", "astro_b.fits"]
     assert r["crval1"] == [1.0, 1.0]
     assert r["crval2"] == [2.0, 2.0]
 
@@ -507,13 +562,9 @@ async def test_pointing_no_images_returns_error(actions, monkeypatch):
     monkeypatch.setattr(
         "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
     )
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.os.listdir", lambda p: []
-    )  # no fits
-
-    r = await actions.pointing(
-        ra="1", dec="2", save_by_date=False, clear_dir=True, save=False
-    )
+    prepare_successful_pipeline(actions, monkeypatch)
+    actions.env.astrometry._ensure_outputs = []
+    r = await actions.pointing(ra="1", dec="2", SaveGrabRaw=False)
     assert r["status"] == "error"
     assert r["images"] == []
     assert r["crval1"] == []
@@ -525,18 +576,14 @@ async def test_pointing_exception_returns_error(actions, monkeypatch):
     monkeypatch.setattr(
         "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
     )
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.os.listdir", lambda p: ["a.fits"]
-    )
+    prepare_successful_pipeline(actions, monkeypatch)
 
-    def boom(images, max_workers):
+    def boom():
         raise RuntimeError("solve failed")
 
-    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.get_crvals_from_images", boom)
+    actions.env.astrometry.ensure_astrometry_ready = boom
 
-    r = await actions.pointing(
-        ra="1", dec="2", save_by_date=False, clear_dir=False, save=False
-    )
+    r = await actions.pointing(ra="1", dec="2", SaveGrabRaw=False)
     assert r["status"] == "error"
     assert "pointing failed" in r["message"].lower()
 
@@ -684,9 +731,11 @@ def test_ensure_astrometry_outputs_ready_fallback_runs_preproc_then_finds_files(
     state = {"after": False}
 
     class AstFallback:
-        # 일부러 final_astrometry_dir / dir_path 없이 → base_dir/img/astroimg 디폴트 경로 타게 커버
+        final_astrometry_dir = "/tmp/astroimg"
+
         def preproc(self):
             state["after"] = True
+            return True
 
     env = FakeEnv(astrometry=AstFallback())
     act = ga_module.GFAActions(env=env)
@@ -721,18 +770,12 @@ def test_ensure_astrometry_outputs_ready_fallback_raises_when_no_preproc(
 
 
 @pytest.mark.asyncio
-async def test_grab_custom_path_is_used(actions, monkeypatch):
+async def test_grab_custom_path_is_used(actions, monkeypatch, tmp_path):
     # grab(path=...) 분기 커버(기본 img/grab/YYYY-MM-DD 대신 사용)
-    made = {"path": None}
-
-    def fake_makedirs(p, exist_ok=False):
-        made["path"] = p
-
-    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.makedirs", fake_makedirs)
-
-    r = await actions.grab(CamNum=1, path="/custom/save/here")
-    assert r["status"] in ("success", "error")
-    assert made["path"] == "/custom/save/here"
+    custom_path = tmp_path / "custom" / "save" / "here"
+    r = await actions.grab(CamNum=1, path=str(custom_path))
+    assert r["status"] == "success"
+    assert Path(r["save_path"]) == custom_path.resolve()
 
 
 @pytest.mark.asyncio
@@ -761,24 +804,14 @@ async def test_grab_close_all_cameras_failure_is_caught_and_warned(
 async def test_guiding_close_all_cameras_failure_is_caught_and_warned(
     actions, monkeypatch
 ):
-    # guiding() 내부 finally에서 close 실패 warning branch(234-235 라인대) 커버
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
-    )
-    monkeypatch.setattr("kspec_gfa_controller.gfa_actions.os.listdir", lambda p: [])
+    # 현재 guiding API는 grab 결과 오류를 그대로 guiding 오류로 변환한다.
+    async def failed_grab(**kwargs):
+        return {"status": "error", "message": "camera unavailable"}
 
-    async def boom_close():
-        raise RuntimeError("close failed")
-
-    actions.env.controller.close_all_cameras = boom_close  # type: ignore
-
-    r = await actions.guiding(save=False)
-    # close 실패해도 guiding은 전체 try/except로 잡힐 수 있으니 status는 success 또는 error 둘 다 가능
-    assert r["status"] in ("success", "error")
-    assert any(
-        lvl == "warning" and "close_all_cameras failed" in msg
-        for lvl, msg in actions.env.logger.logs
-    )
+    monkeypatch.setattr(actions, "grab", failed_grab)
+    r = await actions.guiding(SaveGrabRaw=False)
+    assert r["status"] == "error"
+    assert "camera unavailable" in r["message"]
 
 
 @pytest.mark.asyncio
@@ -788,13 +821,10 @@ async def test_pointing_save_true_copies_files(actions, monkeypatch, tmp_path):
         "kspec_gfa_controller.gfa_actions.os.makedirs", lambda *a, **k: None
     )
 
-    # pointing_raw_path에 파일 2개 있는 것처럼
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.os.listdir", lambda p: ["a.fits", "b.fits"]
-    )
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.os.path.isfile", lambda p: True
-    )
+    passed = ["/tmp/raw/a.fits", "/tmp/raw/b.fits"]
+    prepare_successful_pipeline(actions, monkeypatch, passed)
+    actions.env.astrometry._ensure_outputs = ["/tmp/astro_a.fits"]
+    patch_fits_crvals(monkeypatch)
 
     copy_calls = []
     monkeypatch.setattr(
@@ -802,25 +832,577 @@ async def test_pointing_save_true_copies_files(actions, monkeypatch, tmp_path):
         lambda s, d: copy_calls.append((s, d)),
     )
 
-    # 이미지 리스트 생성 통과: Path.glob 도 2개 반환
-    def fake_glob(self, pattern):
-        if pattern == "*.fits":
-            return [Path("a.fits"), Path("b.fits")]
-        return []
-
-    monkeypatch.setattr(Path, "glob", fake_glob, raising=True)
-
-    monkeypatch.setattr(
-        "kspec_gfa_controller.gfa_actions.get_crvals_from_images",
-        lambda images, max_workers: ([1.0] * len(images), [2.0] * len(images)),
-    )
-
     r = await actions.pointing(
         ra="1",
         dec="2",
-        save_by_date=False,
         clear_dir=False,
-        save=True,
+        SaveGrabRaw=True,
     )
     assert r["status"] == "success"
     assert len(copy_calls) == 2
+
+
+# -----------------------------------------------------------------------------
+# Release-coverage tests: path resolution and diagnostics
+# -----------------------------------------------------------------------------
+def test_get_save_root_uses_astrometry_config(ga_module, tmp_path):
+    env = FakeEnv()
+    env.save_root = None
+    env.astrometry.inpar["paths"]["save_root"] = str(tmp_path / "configured")
+    env.astrometry.inpar["paths"]["directories"] = {"raw_images": "camera_raw"}
+    action = ga_module.GFAActions(env=env)
+
+    root, dirs = action._get_save_root_and_dirs()
+
+    assert root == (tmp_path / "configured").resolve()
+    assert root.is_dir()
+    assert dirs == {"raw_images": "camera_raw"}
+
+
+def test_get_save_root_uses_default_without_astrometry(ga_module, tmp_path, monkeypatch):
+    class BareEnv:
+        logger = FakeLogger()
+        save_root = None
+
+    monkeypatch.setattr(ga_module.Path, "home", lambda: tmp_path)
+    action = ga_module.GFAActions(env=BareEnv())
+
+    root, dirs = action._get_save_root_and_dirs()
+
+    assert root == (tmp_path / "work/DATA/GFADATA/img").resolve()
+    assert dirs == {}
+
+
+def test_debug_path_block_success(ga_module, tmp_path):
+    actions = ga_module.GFAActions(env=FakeEnv())
+    target = tmp_path / "debug-ok"
+
+    actions._debug_path_block("unit", {"target": target})
+
+    assert (target / "debug_write_test.txt").read_text() == "debug"
+    assert any("write test ok" in msg for level, msg in actions.env.logger.logs)
+
+
+def test_debug_path_block_handles_mkdir_failure(ga_module, tmp_path, monkeypatch):
+    actions = ga_module.GFAActions(env=FakeEnv())
+
+    def fail_mkdir(self, *args, **kwargs):
+        raise OSError("mkdir denied")
+
+    monkeypatch.setattr(Path, "mkdir", fail_mkdir)
+    actions._debug_path_block("unit", {"target": tmp_path / "blocked"})
+
+    assert any("mkdir failed" in msg for level, msg in actions.env.logger.logs)
+
+
+def test_debug_path_block_handles_write_failure(ga_module, tmp_path, monkeypatch):
+    actions = ga_module.GFAActions(env=FakeEnv())
+
+    def fail_open(*args, **kwargs):
+        raise OSError("write denied")
+
+    monkeypatch.setattr("builtins.open", fail_open)
+    actions._debug_path_block("unit", {"target": tmp_path / "write-blocked"})
+
+    assert any("write test failed" in msg for level, msg in actions.env.logger.logs)
+
+
+# -----------------------------------------------------------------------------
+# Release-coverage tests: astrometry fallback failures
+# -----------------------------------------------------------------------------
+def test_ensure_astrometry_outputs_requires_final_directory(ga_module):
+    class AstrometryWithoutDirectory:
+        pass
+
+    action = ga_module.GFAActions(env=FakeEnv(astrometry=AstrometryWithoutDirectory()))
+
+    with pytest.raises(RuntimeError, match="final_astrometry_dir"):
+        action._ensure_astrometry_outputs_ready()
+
+
+def test_ensure_astrometry_outputs_rejects_failed_preproc(ga_module, monkeypatch):
+    class FailedAstrometry:
+        final_astrometry_dir = "/tmp/astro"
+
+        def preproc(self):
+            return False
+
+    action = ga_module.GFAActions(env=FakeEnv(astrometry=FailedAstrometry()))
+    monkeypatch.setattr(ga_module.glob, "glob", lambda pattern: [])
+
+    with pytest.raises(RuntimeError, match="preproc failed"):
+        action._ensure_astrometry_outputs_ready()
+
+
+def test_ensure_astrometry_outputs_rejects_missing_post_preproc_files(
+    ga_module, monkeypatch
+):
+    class SuccessfulAstrometryWithoutOutputs:
+        final_astrometry_dir = "/tmp/astro"
+
+        def preproc(self):
+            return True
+
+    action = ga_module.GFAActions(
+        env=FakeEnv(astrometry=SuccessfulAstrometryWithoutOutputs())
+    )
+    monkeypatch.setattr(ga_module.glob, "glob", lambda pattern: [])
+
+    with pytest.raises(RuntimeError, match="expected outputs not found"):
+        action._ensure_astrometry_outputs_ready()
+
+
+# -----------------------------------------------------------------------------
+# Release-coverage tests: grab validation and multiple exposures
+# -----------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_grab_rejects_exposure_time_above_limit(actions):
+    with pytest.raises(ValueError, match="<= 10"):
+        await actions.grab(ExpTime=10.1)
+
+
+@pytest.mark.asyncio
+async def test_grab_rejects_nonpositive_exposure_count(actions):
+    with pytest.raises(ValueError, match=">= 1"):
+        await actions.grab(ExpNum=0)
+
+
+@pytest.mark.asyncio
+async def test_grab_multiple_exposures_writes_combined_fits(actions):
+    result = await actions.grab(CamNum=2, ExpTime=2.5, ExpNum=2)
+
+    assert result["status"] == "success"
+    assert len(actions.env.controller.grabone_calls) == 2
+    assert len(actions.env.controller.img_class.save_calls) == 1
+    save_call = actions.env.controller.img_class.save_calls[0]
+    assert save_call["filename"].endswith("_combined.fits")
+    assert save_call["exptime"] == 5.0
+    assert len(save_call["image_array"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_grab_skips_empty_image_lists(ga_module, tmp_path, monkeypatch):
+    class EmptyImageMap:
+        def __init__(self):
+            self.camera_ids = []
+
+        def __getitem__(self, camera_id):
+            if camera_id not in self.camera_ids:
+                self.camera_ids.append(camera_id)
+            # Deliberately return a transient list so the defensive empty-list
+            # guard in grab() can be exercised.
+            return []
+
+        def items(self):
+            return [(camera_id, []) for camera_id in self.camera_ids]
+
+    monkeypatch.setattr(ga_module, "defaultdict", lambda _factory: EmptyImageMap())
+    action = ga_module.GFAActions(env=FakeEnv())
+    monkeypatch.setattr(action, "_debug_path_block", lambda *a, **k: None)
+
+    response = await action.grab(CamNum=2, path=str(tmp_path))
+
+    assert response["status"] == "success"
+    assert response["grab_files"] == []
+    assert action.env.controller.img_class.save_calls == []
+
+
+# -----------------------------------------------------------------------------
+# Release-coverage tests: guiding retries and warning response
+# -----------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_guiding_rejects_nonpositive_retry_count(actions):
+    with pytest.raises(ValueError, match=">= 1"):
+        await actions.guiding(MaxGrabRetry=0)
+
+
+@pytest.mark.asyncio
+async def test_guiding_retries_filter_then_succeeds(actions, monkeypatch):
+    async def successful_grab(**kwargs):
+        return {"status": "success", "message": "ok"}
+
+    results = iter(
+        [
+            {"passed_files": [], "failed_files": ["bad.fits"], "n_passed": 0, "n_failed": 1},
+            {"passed_files": ["good.fits"], "failed_files": [], "n_passed": 1, "n_failed": 0},
+        ]
+    )
+    monkeypatch.setattr(actions, "grab", successful_grab)
+    monkeypatch.setattr(actions, "_filter_pointing_raw_images", lambda **kwargs: next(results))
+
+    response = await actions.guiding(SaveGrabRaw=False, MaxGrabRetry=2)
+
+    assert response["status"] == "success"
+    assert any("Retrying grab" in msg for level, msg in actions.env.logger.logs)
+
+
+@pytest.mark.asyncio
+async def test_guiding_returns_error_after_filter_retries_exhausted(actions, monkeypatch):
+    async def successful_grab(**kwargs):
+        return {"status": "success", "message": "ok"}
+
+    failed_filter = {
+        "passed_files": [],
+        "failed_files": ["bad.fits"],
+        "n_passed": 0,
+        "n_failed": 1,
+    }
+    monkeypatch.setattr(actions, "grab", successful_grab)
+    monkeypatch.setattr(
+        actions, "_filter_pointing_raw_images", lambda **kwargs: failed_filter
+    )
+
+    response = await actions.guiding(SaveGrabRaw=False, MaxGrabRetry=2)
+
+    assert response["status"] == "error"
+    assert "not enough valid images" in response["message"]
+    assert response["filter_result"] == failed_filter
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("offsets", [(None, 2.0, 3.0), (1.0, float("nan"), 3.0)])
+async def test_guiding_warns_for_unreliable_offsets(actions, monkeypatch, offsets):
+    prepare_successful_pipeline(actions, monkeypatch)
+    actions.env.guider = FakeGuider(*offsets)
+
+    response = await actions.guiding(SaveGrabRaw=False)
+
+    assert response["status"] == "warning"
+    assert "no reliable guide stars" in response["message"]
+
+
+@pytest.mark.asyncio
+async def test_guiding_treats_is_nan_check_exception_as_unreliable(
+    actions, ga_module, monkeypatch
+):
+    import builtins
+
+    sentinel = object()
+    prepare_successful_pipeline(actions, monkeypatch)
+    actions.env.guider = FakeGuider(sentinel, 2.0, 3.0)
+
+    def raising_isinstance(value, expected_type):
+        if value is sentinel and expected_type is float:
+            raise RuntimeError("defensive isinstance failure")
+        return builtins.isinstance(value, expected_type)
+
+    monkeypatch.setattr(ga_module, "isinstance", raising_isinstance, raising=False)
+
+    response = await actions.guiding(SaveGrabRaw=False)
+
+    assert response["status"] == "warning"
+    assert response["fdx"] is sentinel
+
+
+# -----------------------------------------------------------------------------
+# Release-coverage tests: pointing-image quality evaluation
+# -----------------------------------------------------------------------------
+class FakeSources:
+    def __init__(self, flux=None, include_flux=True, length=None):
+        self._flux = [] if flux is None else list(flux)
+        self.colnames = ["flux"] if include_flux else ["xcentroid"]
+        self._length = len(self._flux) if length is None else length
+
+    def __len__(self):
+        return self._length
+
+    def __getitem__(self, name):
+        if name != "flux" or "flux" not in self.colnames:
+            raise KeyError(name)
+        return self._flux
+
+
+def patch_quality_dependencies(
+    ga_module,
+    monkeypatch,
+    image,
+    stats=(0.0, 0.0, 2.0),
+    sources=None,
+):
+    monkeypatch.setattr(ga_module.fits, "getdata", lambda path: image)
+    monkeypatch.setattr(ga_module, "sigma_clipped_stats", lambda data, sigma: stats)
+
+    class Finder:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def __call__(self, data):
+            return sources
+
+    monkeypatch.setattr(ga_module, "DAOStarFinder", Finder)
+
+
+def test_evaluate_pointing_image_quality_passes_valid_image(
+    actions, ga_module, monkeypatch
+):
+    patch_quality_dependencies(
+        ga_module,
+        monkeypatch,
+        np.arange(100, dtype=float).reshape(10, 10),
+        sources=FakeSources([5.0, np.nan, 10.0]),
+    )
+
+    result = actions._evaluate_pointing_image_quality(Path("good.fits"))
+
+    assert result == {
+        "passed": True,
+        "n_peaks": 3,
+        "brightest_flux": 10.0,
+        "std_bg": 2.0,
+        "reasons": [],
+    }
+
+
+def test_evaluate_pointing_image_quality_rejects_non_2d_image(
+    actions, ga_module, monkeypatch
+):
+    monkeypatch.setattr(ga_module.fits, "getdata", lambda path: np.zeros((2, 2, 2)))
+
+    result = actions._evaluate_pointing_image_quality(Path("cube.fits"))
+
+    assert result["passed"] is False
+    assert result["reasons"] == ["invalid_dimension=3"]
+
+
+def test_evaluate_pointing_image_quality_rejects_all_nonfinite(
+    actions, ga_module, monkeypatch
+):
+    monkeypatch.setattr(ga_module.fits, "getdata", lambda path: np.full((10, 10), np.nan))
+
+    result = actions._evaluate_pointing_image_quality(Path("nan.fits"))
+
+    assert result["passed"] is False
+    assert result["reasons"] == ["no_finite_pixels"]
+
+
+def test_evaluate_pointing_image_quality_reports_all_threshold_failures(
+    actions, ga_module, monkeypatch
+):
+    image = np.ones((10, 10), dtype=float)
+    image[0, :2] = np.nan
+    patch_quality_dependencies(
+        ga_module,
+        monkeypatch,
+        image,
+        stats=(1.0, 1.0, 0.5),
+        sources=FakeSources([], length=0),
+    )
+
+    result = actions._evaluate_pointing_image_quality(Path("weak.fits"))
+
+    assert result["passed"] is False
+    assert any("low_finite_fraction" in reason for reason in result["reasons"])
+    assert any("low_std_bg" in reason for reason in result["reasons"])
+    assert any("few_peaks" in reason for reason in result["reasons"])
+    assert any("low_brightest_flux" in reason for reason in result["reasons"])
+
+
+def test_evaluate_pointing_image_quality_handles_nonfinite_std(
+    actions, ga_module, monkeypatch
+):
+    patch_quality_dependencies(
+        ga_module,
+        monkeypatch,
+        np.ones((10, 10)),
+        stats=(0.0, 0.0, np.nan),
+    )
+
+    result = actions._evaluate_pointing_image_quality(Path("bad-std.fits"))
+
+    assert result["passed"] is False
+    assert any("low_std_bg" in reason for reason in result["reasons"])
+
+
+def test_evaluate_pointing_image_quality_handles_sources_without_flux(
+    actions, ga_module, monkeypatch
+):
+    patch_quality_dependencies(
+        ga_module,
+        monkeypatch,
+        np.ones((10, 10)),
+        sources=FakeSources(include_flux=False, length=2),
+    )
+
+    result = actions._evaluate_pointing_image_quality(Path("no-flux.fits"))
+
+    assert result["n_peaks"] == 2
+    assert result["brightest_flux"] == 0.0
+    assert result["passed"] is False
+
+
+def test_evaluate_pointing_image_quality_handles_empty_finite_flux(
+    actions, ga_module, monkeypatch
+):
+    patch_quality_dependencies(
+        ga_module,
+        monkeypatch,
+        np.ones((10, 10)),
+        sources=FakeSources([np.nan]),
+    )
+
+    result = actions._evaluate_pointing_image_quality(Path("nan-flux.fits"))
+
+    assert result["n_peaks"] == 1
+    assert result["brightest_flux"] == 0.0
+    assert result["passed"] is False
+
+
+def test_evaluate_pointing_image_quality_handles_detection_exception(
+    actions, ga_module, monkeypatch
+):
+    monkeypatch.setattr(
+        ga_module.fits, "getdata", lambda path: (_ for _ in ()).throw(OSError("bad FITS"))
+    )
+
+    result = actions._evaluate_pointing_image_quality(Path("broken.fits"))
+
+    assert result["passed"] is False
+    assert result["reasons"] == ["filter_error=OSError: bad FITS"]
+    assert any(level == "exception" for level, msg in actions.env.logger.logs)
+
+
+# -----------------------------------------------------------------------------
+# Release-coverage tests: moving and filtering raw images
+# -----------------------------------------------------------------------------
+def test_move_with_unique_name_without_collision(actions, tmp_path):
+    src = tmp_path / "raw" / "image.fits"
+    src.parent.mkdir()
+    src.write_text("data")
+    destination = tmp_path / "unclean"
+
+    moved = actions._move_with_unique_name(src, destination)
+
+    assert moved == destination / "image.fits"
+    assert moved.read_text() == "data"
+    assert not src.exists()
+
+
+def test_move_with_unique_name_adds_suffix_on_collision(actions, tmp_path):
+    src = tmp_path / "raw" / "image.fits"
+    src.parent.mkdir()
+    src.write_text("new")
+    destination = tmp_path / "unclean"
+    destination.mkdir()
+    (destination / "image.fits").write_text("old")
+
+    moved = actions._move_with_unique_name(src, destination)
+
+    assert moved == destination / "image_001.fits"
+    assert moved.read_text() == "new"
+
+
+def test_move_with_unique_name_raises_when_all_names_are_taken(
+    actions, tmp_path, monkeypatch
+):
+    src = tmp_path / "image.fits"
+    src.write_text("data")
+    monkeypatch.setattr(Path, "exists", lambda self: True)
+
+    with pytest.raises(RuntimeError, match="unique filename"):
+        actions._move_with_unique_name(src, tmp_path / "unclean")
+
+
+def test_filter_pointing_raw_images_separates_pass_and_fail(
+    actions, tmp_path, monkeypatch
+):
+    raw = tmp_path / "raw-filter"
+    unclean = tmp_path / "unclean-filter"
+    raw.mkdir()
+    good = raw / "good.fits"
+    bad = raw / "bad.fit"
+    ignored = raw / "notes.txt"
+    good.write_text("good")
+    bad.write_text("bad")
+    ignored.write_text("ignore")
+
+    def evaluate(path):
+        if path.name == "good.fits":
+            return {
+                "passed": True,
+                "std_bg": 2.0,
+                "n_peaks": 3,
+                "brightest_flux": 10.0,
+                "reasons": [],
+            }
+        return {
+            "passed": False,
+            "std_bg": 0.0,
+            "n_peaks": 0,
+            "brightest_flux": 0.0,
+            "reasons": ["bad image"],
+        }
+
+    monkeypatch.setattr(actions, "_evaluate_pointing_image_quality", evaluate)
+
+    result = actions._filter_pointing_raw_images(raw, unclean, label="unit")
+
+    assert result["n_passed"] == 1
+    assert result["n_failed"] == 1
+    assert result["passed_files"] == [str(good)]
+    assert result["failed_files"] == [str(unclean / "bad.fit")]
+    assert good.exists()
+    assert not bad.exists()
+    assert ignored.exists()
+
+
+# -----------------------------------------------------------------------------
+# Release-coverage tests: pointing retry and FITS-header failure branches
+# -----------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_pointing_retries_filter_then_succeeds(actions, monkeypatch):
+    results = iter(
+        [
+            {"passed_files": [], "failed_files": ["bad.fits"], "n_passed": 0, "n_failed": 1},
+            {"passed_files": ["good.fits"], "failed_files": [], "n_passed": 1, "n_failed": 0},
+        ]
+    )
+    monkeypatch.setattr(actions, "_filter_pointing_raw_images", lambda **kwargs: next(results))
+    actions.env.astrometry._ensure_outputs = ["/tmp/astro_good.fits"]
+    patch_fits_crvals(monkeypatch)
+
+    response = await actions.pointing(
+        ra="1", dec="2", SaveGrabRaw=False, MaxGrabRetry=2
+    )
+
+    assert response["status"] == "success"
+    assert any("Retrying grab" in msg for level, msg in actions.env.logger.logs)
+
+
+@pytest.mark.asyncio
+async def test_pointing_returns_error_after_filter_retries_exhausted(
+    actions, monkeypatch
+):
+    failed_filter = {
+        "passed_files": [],
+        "failed_files": ["bad.fits"],
+        "n_passed": 0,
+        "n_failed": 1,
+    }
+    monkeypatch.setattr(
+        actions, "_filter_pointing_raw_images", lambda **kwargs: failed_filter
+    )
+
+    response = await actions.pointing(
+        ra="1", dec="2", SaveGrabRaw=False, MaxGrabRetry=2
+    )
+
+    assert response["status"] == "error"
+    assert "not enough valid images" in response["message"]
+    assert response["filter_result"] == failed_filter
+
+
+@pytest.mark.asyncio
+async def test_pointing_returns_nan_when_fits_header_read_fails(actions, monkeypatch):
+    prepare_successful_pipeline(actions, monkeypatch)
+    actions.env.astrometry._ensure_outputs = ["/tmp/broken.fits"]
+    monkeypatch.setattr(
+        "kspec_gfa_controller.gfa_actions.fits.open",
+        lambda path: (_ for _ in ()).throw(OSError("cannot read header")),
+    )
+
+    response = await actions.pointing(ra="1", dec="2", SaveGrabRaw=False)
+
+    assert response["status"] == "success"
+    assert np.isnan(response["crval1"][0])
+    assert np.isnan(response["crval2"][0])
+    assert any("Failed to read CRVAL" in msg for level, msg in actions.env.logger.logs)

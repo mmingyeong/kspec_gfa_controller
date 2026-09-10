@@ -1,17 +1,24 @@
-name: tests
+name: Tests
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "release/**"
   pull_request:
-    branches: [main]
+    branches:
+      - main
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -21,11 +28,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          python -m pip install -r requirements-dev.txt
 
       - name: Run tests with coverage
         run: |
-          python -m pytest --cov --cov-report=xml --cov-report=term
+          python -m pytest tests `
+            --cov=kspec_gfa_controller `
+            --cov-report=term-missing `
+            --cov-report=xml `
+            --cov-fail-under=90
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
@@ -38,4 +49,3 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.xml
-

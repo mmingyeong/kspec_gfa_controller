@@ -410,3 +410,259 @@ def test_hot_pixel_removal_keep_dtype_integer_roundtrip():
     assert out.dtype == np.uint16
     # 주변 median=0 => 치환되면 0
     assert out[2, 2] == 0
+
+
+# -------------------------
+# save_fits: list/combine and error branches
+# -------------------------
+def test_save_fits_empty_list_raises(tmp_path, logger):
+    img = GFAImage(logger=logger)
+
+    with pytest.raises(ValueError, match="image_array list is empty"):
+        img.save_fits(
+            image_array=[],
+            filename="empty",
+            exptime=1.0,
+            date_obs="2025-12-17",
+            time_obs="00:00:00",
+            output_directory=str(tmp_path),
+        )
+
+
+@pytest.mark.parametrize(
+    "array",
+    [
+        np.zeros(4, dtype=np.float32),
+        np.zeros((2, 2, 2), dtype=np.float32),
+    ],
+)
+def test_save_fits_rejects_non_2d_array(tmp_path, logger, array):
+    img = GFAImage(logger=logger)
+
+    with pytest.raises(ValueError, match="must be 2D array"):
+        img.save_fits(
+            image_array=array,
+            filename="bad_dimension",
+            exptime=1.0,
+            date_obs="2025-12-17",
+            time_obs="00:00:00",
+            output_directory=str(tmp_path),
+        )
+
+
+def test_save_fits_combines_multiple_frames_and_sets_header(tmp_path, logger):
+    img = GFAImage(logger=logger)
+    frames = [
+        np.full((3, 4), 10.0, dtype=np.float32),
+        np.full((3, 4), 20.0, dtype=np.float32),
+        np.full((3, 4), 30.0, dtype=np.float32),
+    ]
+
+    img.save_fits(
+        image_array=frames,
+        filename="combined",
+        exptime=3.0,
+        date_obs="2025-12-17",
+        time_obs="00:00:00",
+        ra="12:34:56",
+        dec="-30:00:00",
+        output_directory=str(tmp_path),
+    )
+
+    with fits.open(tmp_path / "combined.fits") as hdul:
+        data = hdul[0].data
+        header = hdul[0].header
+
+    assert data.dtype.kind == "f"
+    assert data.shape == (3, 4)
+    assert np.allclose(data, 20.0)
+    assert header["NCOMB"] == 3
+    assert header["COMBINE"] == "SIGMA_MEAN"
+    assert header["RA"] == "12:34:56"
+    assert header["DEC"] == "-30:00:00"
+
+
+def test_save_fits_rejects_mismatched_frame_shapes(tmp_path, logger):
+    img = GFAImage(logger=logger)
+    frames = [
+        np.zeros((2, 3), dtype=np.float32),
+        np.zeros((3, 2), dtype=np.float32),
+    ]
+
+    with pytest.raises(ValueError, match="Image size mismatch"):
+        img.save_fits(
+            image_array=frames,
+            filename="mismatch",
+            exptime=2.0,
+            date_obs="2025-12-17",
+            time_obs="00:00:00",
+            output_directory=str(tmp_path),
+        )
+
+
+def test_save_fits_logs_and_reraises_write_error(
+    tmp_path, logger, monkeypatch, caplog
+):
+    caplog.set_level(logging.ERROR)
+    img = GFAImage(logger=logger)
+
+    def fail_writeto(self, *args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(fits.HDUList, "writeto", fail_writeto)
+
+    with pytest.raises(OSError, match="disk full"):
+        img.save_fits(
+            image_array=np.zeros((2, 2), dtype=np.float32),
+            filename="write_error",
+            exptime=1.0,
+            date_obs="2025-12-17",
+            time_obs="00:00:00",
+            output_directory=str(tmp_path),
+        )
+
+    assert any("error writing fits file" in r.message.lower() for r in caplog.records)
+
+
+# -------------------------
+# save_png: remaining normalization branches
+# -------------------------
+def test_save_png_uses_cwd_and_keeps_extension(tmp_path, logger, monkeypatch):
+    img = GFAImage(logger=logger)
+    monkeypatch.setattr(os, "getcwd", lambda: str(tmp_path))
+
+    img.save_png(
+        np.arange(16, dtype=np.float32).reshape(4, 4),
+        "time:12.png",
+        output_directory=None,
+        vmin=0.0,
+        vmax=15.0,
+        bit_depth=8,
+    )
+
+    assert (tmp_path / "time-12.png").exists()
+    assert not (tmp_path / "time-12.png.png").exists()
+
+
+def test_save_png_flat_16bit_saves_black(tmp_path, logger):
+    img = GFAImage(logger=logger)
+
+    img.save_png(
+        np.full((4, 5), 42.0, dtype=np.float32),
+        "flat16",
+        output_directory=str(tmp_path),
+        bit_depth=16,
+    )
+
+    data = np.asarray(Image.open(tmp_path / "flat16.png"))
+    assert data.shape == (4, 5)
+    assert np.all(data == 0)
+
+
+def test_save_png_invalid_zscale_range_falls_back_to_minmax(
+    tmp_path, logger, monkeypatch, caplog
+):
+    caplog.set_level(logging.WARNING)
+
+    class InvalidRangeZScale:
+        def __init__(self, contrast=0.25):
+            self.contrast = contrast
+
+        def get_limits(self, image):
+            return 5.0, 5.0
+
+    monkeypatch.setattr(mod, "ZScaleInterval", InvalidRangeZScale)
+    img = mod.GFAImage(logger=logger)
+    array = np.arange(25, dtype=np.float32).reshape(5, 5)
+
+    img.save_png(array, "zscale_invalid", output_directory=str(tmp_path))
+
+    assert (tmp_path / "zscale_invalid.png").exists()
+    assert any(
+        "zscale returned invalid range" in r.message.lower()
+        for r in caplog.records
+    )
+
+
+def test_hot_pixel_removal_keep_dtype_false_returns_float32():
+    array = np.zeros((5, 5), dtype=np.uint16)
+    array[2, 2] = 1000
+
+    result = GFAImage.hot_pixel_removal_median_ratio(
+        array,
+        factor=1.5,
+        n_iter=0,
+        keep_dtype=False,
+    )
+
+    assert result.dtype == np.float32
+    assert result[2, 2] == 0.0
+
+
+# -------------------------
+# combine_fits_by_camera
+# -------------------------
+def _write_camera_fits(path: Path, value: float, shape=(3, 4)) -> None:
+    data = np.full(shape, value, dtype=np.float32)
+    header = fits.Header()
+    header["ORIGIN"] = "unit-test"
+    fits.writeto(path, data, header=header, overwrite=True)
+
+
+def test_combine_fits_by_camera_groups_filters_and_writes_output(
+    tmp_path, logger, caplog
+):
+    caplog.set_level(logging.INFO)
+    base_dir = tmp_path / "raw"
+    output_dir = tmp_path / "combined"
+    base_dir.mkdir()
+
+    _write_camera_fits(base_dir / "obs_40103651_001.fits", 10.0)
+    _write_camera_fits(base_dir / "obs_40103651_002.fit", 20.0)
+    _write_camera_fits(base_dir / "obs_40103651_003.fts", 30.0)
+    _write_camera_fits(base_dir / "obs_99999999_001.fits", 99.0)
+    _write_camera_fits(base_dir / "obs_40103651_combined.fits", 99.0)
+    (base_dir / "notes.txt").write_text("not a FITS file", encoding="utf-8")
+
+    img = GFAImage(logger=logger)
+    outputs = img.combine_fits_by_camera(
+        base_dir=str(base_dir),
+        output_dir=str(output_dir),
+        sigma=2.5,
+        output_prefix="stack",
+    )
+
+    expected = output_dir / "stack_40103651_combined.fits"
+    assert outputs == [str(expected)]
+    assert expected.exists()
+
+    with fits.open(expected) as hdul:
+        data = hdul[0].data
+        header = hdul[0].header
+
+    assert data.dtype.kind == "f"
+    assert np.allclose(data, 20.0)
+    assert header["NCOMB"] == 3
+    assert header["COMBINE"] == "SIGMA_MEAN"
+    assert header["SIGMA"] == 2.5
+    assert header["CAMID"] == "40103651"
+    assert header["ORIGIN"] == "unit-test"
+    assert sum("no files" in r.message.lower() for r in caplog.records) == 5
+    assert any("saved combined fits" in r.message.lower() for r in caplog.records)
+
+
+def test_combine_fits_by_camera_rejects_mismatched_shapes(tmp_path, logger):
+    base_dir = tmp_path / "raw"
+    output_dir = tmp_path / "combined"
+    base_dir.mkdir()
+
+    _write_camera_fits(base_dir / "obs_40103667_001.fits", 1.0, shape=(2, 3))
+    _write_camera_fits(base_dir / "obs_40103667_002.fits", 2.0, shape=(3, 2))
+
+    img = GFAImage(logger=logger)
+
+    with pytest.raises(ValueError, match="40103667: image size mismatch"):
+        img.combine_fits_by_camera(
+            base_dir=str(base_dir),
+            output_dir=str(output_dir),
+        )

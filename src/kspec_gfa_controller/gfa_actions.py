@@ -19,8 +19,6 @@ from photutils.detection import DAOStarFinder
 from .gfa_logger import GFALogger
 from .gfa_environment import create_environment, GFAEnvironment
 
-# NOTE: pointing에서는 get_crvals_from_images를 쓰고 있으니 유지
-from .gfa_getcrval import get_crvals_from_images, get_crval_from_image  # noqa: F401
 
 logger = GFALogger(__file__)
 
@@ -956,26 +954,26 @@ class GFAActions:
                     f"[pointing] grab/filter attempt {attempt}/{MaxGrabRetry}"
                 )
 
-                # if clear_dir:
-                #     self.env.astrometry.clear_raw_files()
+                if clear_dir:
+                    self.env.astrometry.clear_raw_files()
 
-                # grab_result = await self.grab(
-                #     CamNum=CamNum,
-                #     ExpTime=ExpTime,
-                #     ExpNum=ExpNum,
-                #     Binning=Binning,
-                #     path=str(pointing_raw_path),
-                #     ra=ra,
-                #     dec=dec,
-                # )
+                grab_result = await self.grab(
+                    CamNum=CamNum,
+                    ExpTime=ExpTime,
+                    ExpNum=ExpNum,
+                    Binning=Binning,
+                    path=str(pointing_raw_path),
+                    ra=ra,
+                    dec=dec,
+                )
 
-                # if grab_result.get("status") != "success":
-                #     return self._generate_response(
-                #         "error",
-                #         f"Pointing image grab failed: {grab_result.get('message')}",
-                #         raw_path=str(pointing_raw_path),
-                #         save_path=str(pointing_save_path),
-                #     )
+                if grab_result.get("status") != "success":
+                    return self._generate_response(
+                        "error",
+                        f"Pointing image grab failed: {grab_result.get('message')}",
+                        raw_path=str(pointing_raw_path),
+                        save_path=str(pointing_save_path),
+                    )
 
                 filter_result = self._filter_pointing_raw_images(
                     raw_path=pointing_raw_path,

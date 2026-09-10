@@ -1,52 +1,31 @@
 # tests/test_gfa_environment.py
+import json
 import sys
 import types
-import json
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 import pytest
 
 
-# -----------------------------------------------------------------------------
-# ✅ IMPORT BLOCKER: gfa_environment import 전에 gfa_guider를 가짜로 주입
-# (gfa_environment.py가 "from .gfa_guider import GFAGuider"를 하므로,
-#  여기서 먼저 sys.modules에 stub을 넣어 SciPy import를 원천 차단)
-# -----------------------------------------------------------------------------
-fake_gfa_guider = types.ModuleType("kspec_gfa_controller.gfa_guider")
+UNDER_TEST_FULLNAME = "kspec_gfa_controller.gfa_environment__under_test"
 
 
-class FakeGuider:
-    def __init__(self, config, logger):
-        self.config = config
-        self.logger = logger
-
-
-fake_gfa_guider.GFAGuider = FakeGuider
-sys.modules["kspec_gfa_controller.gfa_guider"] = fake_gfa_guider
-
-
-# 이제 안전하게 import 가능 (SciPy 안 불림)
-import kspec_gfa_controller.gfa_environment as gfa_environment
-
-
-# -------------------------
-# Fakes
-# -------------------------
 class FakeLogger:
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         self.logs = []
 
-    def info(self, m):
-        self.logs.append(("info", str(m)))
+    def info(self, message):
+        self.logs.append(("info", str(message)))
 
-    def debug(self, m):
-        self.logs.append(("debug", str(m)))
+    def debug(self, message):
+        self.logs.append(("debug", str(message)))
 
-    def warning(self, m):
-        self.logs.append(("warning", str(m)))
+    def warning(self, message):
+        self.logs.append(("warning", str(message)))
 
-    def error(self, m):
-        self.logs.append(("error", str(m)))
+    def error(self, message):
+        self.logs.append(("error", str(message)))
 
 
 class FakeController:
@@ -60,26 +39,85 @@ class FakeController:
 
 
 class FakeAstrometry:
-    def __init__(self, config, logger):
+    def __init__(self, config, logger, save_root=None):
         self.config = config
         self.logger = logger
+        self.save_root = save_root
 
 
-# -------------------------
-# Helpers
-# -------------------------
+class FakeGuider:
+    def __init__(self, config, logger, save_root=None):
+        self.config = config
+        self.logger = logger
+        self.save_root = save_root
+
+
+def _find_gfa_environment_py() -> Path:
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates = [
+        repo_root / "src" / "kspec_gfa_controller" / "gfa_environment.py",
+        repo_root / "kspec_gfa_controller" / "gfa_environment.py",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise RuntimeError(
+        "gfa_environment.py not found. tried:\n"
+        + "\n".join(str(candidate) for candidate in candidates)
+    )
+
+
+@pytest.fixture
+def env_module(monkeypatch):
+    source_path = _find_gfa_environment_py()
+    repo_root = Path(__file__).resolve().parents[1]
+    package_name = "kspec_gfa_controller"
+
+    if package_name not in sys.modules:
+        package = types.ModuleType(package_name)
+        package.__path__ = [
+            str(repo_root / "src" / package_name),
+            str(repo_root / package_name),
+        ]
+        monkeypatch.setitem(sys.modules, package_name, package)
+
+    dependencies = {
+        "gfa_controller": ("GFAController", FakeController),
+        "gfa_logger": ("GFALogger", FakeLogger),
+        "gfa_astrometry": ("GFAAstrometry", FakeAstrometry),
+        "gfa_guider": ("GFAGuider", FakeGuider),
+    }
+    for module_name, (attribute, value) in dependencies.items():
+        fake_module = types.ModuleType(f"{package_name}.{module_name}")
+        setattr(fake_module, attribute, value)
+        monkeypatch.setitem(
+            sys.modules,
+            f"{package_name}.{module_name}",
+            fake_module,
+        )
+
+    spec = spec_from_file_location(UNDER_TEST_FULLNAME, str(source_path))
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Failed to create import spec for: {source_path}")
+
+    module = module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, UNDER_TEST_FULLNAME, module)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _write_env_cams_json(path: Path):
-    cfg = {
+    config = {
         "GfaController": {
             "Elements": {
                 "Cameras": {
                     "Elements": {
-                        "Cam1": {"Number": 1},
+                        "Cam6": {"Number": 6},
                         "Cam2": {"Number": 2},
+                        "Cam1": {"Number": 1},
                         "Cam3": {"Number": 3},
                         "Cam4": {"Number": 4},
                         "Cam5": {"Number": 5},
-                        "Cam6": {"Number": 6},
                         "Cam7": {"Number": 7},
                         "CamX": {},
                         "Cam8": {"Number": 8},
@@ -88,133 +126,172 @@ def _write_env_cams_json(path: Path):
             }
         }
     }
-    path.write_text(json.dumps(cfg), encoding="utf-8")
+    path.write_text(json.dumps(config), encoding="utf-8")
 
 
-# -------------------------
-# get_config_path
-# -------------------------
-def test_get_config_path_success(tmp_path, monkeypatch):
-    fake_logger = FakeLogger()
-    monkeypatch.setattr(gfa_environment, "logger", fake_logger)
-
+def test_get_config_path_success(tmp_path, monkeypatch, env_module):
     fake_module_file = tmp_path / "gfa_environment.py"
     fake_module_file.write_text("# dummy", encoding="utf-8")
-    monkeypatch.setattr(gfa_environment, "__file__", str(fake_module_file))
-
-    rel = "cams.json"
-    target = tmp_path / rel
+    monkeypatch.setattr(env_module, "__file__", str(fake_module_file))
+    target = tmp_path / "cams.json"
     target.write_text("{}", encoding="utf-8")
 
-    out = gfa_environment.get_config_path(rel)
-    assert out == str(target)
+    assert env_module.get_config_path("cams.json") == str(target)
 
 
-def test_get_config_path_missing_raises(tmp_path, monkeypatch):
-    fake_logger = FakeLogger()
-    monkeypatch.setattr(gfa_environment, "logger", fake_logger)
-
+def test_get_config_path_missing_logs_and_raises(tmp_path, monkeypatch, env_module):
     fake_module_file = tmp_path / "gfa_environment.py"
     fake_module_file.write_text("# dummy", encoding="utf-8")
-    monkeypatch.setattr(gfa_environment, "__file__", str(fake_module_file))
+    monkeypatch.setattr(env_module, "__file__", str(fake_module_file))
 
-    with pytest.raises(FileNotFoundError):
-        gfa_environment.get_config_path("nope.json")
+    with pytest.raises(FileNotFoundError, match="Configuration file not found"):
+        env_module.get_config_path("missing.json")
 
-
-# -------------------------
-# get_camera_ids
-# -------------------------
-def test_get_camera_ids_plate_and_finder(tmp_path):
-    cfgp = tmp_path / "cams.json"
-    _write_env_cams_json(cfgp)
-
-    plate = gfa_environment.get_camera_ids(str(cfgp), role="plate")
-    finder = gfa_environment.get_camera_ids(str(cfgp), role="finder")
-
-    assert plate == [1, 2, 3, 4, 5, 6]
-    assert finder == [7]
-
-
-# -------------------------
-# GFAEnvironment (plate)
-# -------------------------
-def test_environment_plate(monkeypatch, tmp_path):
-    monkeypatch.setattr(gfa_environment, "GFAController", FakeController)
-    monkeypatch.setattr(gfa_environment, "GFAAstrometry", FakeAstrometry)
-    monkeypatch.setattr(gfa_environment, "logger", FakeLogger())
-
-    cfgp = tmp_path / "cams.json"
-    _write_env_cams_json(cfgp)
-    astp = tmp_path / "ast.json"
-    astp.write_text("{}", encoding="utf-8")
-
-    env = gfa_environment.GFAEnvironment(
-        gfa_config_path=str(cfgp),
-        ast_config_path=str(astp),
-        role="plate",
+    assert any(
+        level == "error" and "configuration file not found" in message.lower()
+        for level, message in env_module.logger.logs
     )
 
-    assert env.camera_ids == [1, 2, 3, 4, 5, 6]
-    assert isinstance(env.controller, FakeController)
-    assert isinstance(env.astrometry, FakeAstrometry)
-    # guider는 위에서 sys.modules에 주입한 FakeGuider가 들어감
-    assert isinstance(env.guider, FakeGuider)
+
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [
+        ("plate", [1, 2, 3, 4, 5, 6]),
+        ("finder", [7]),
+        ("unsupported", []),
+    ],
+)
+def test_get_camera_ids_filters_and_sorts(tmp_path, env_module, role, expected):
+    config_path = tmp_path / "cams.json"
+    _write_env_cams_json(config_path)
+
+    assert env_module.get_camera_ids(str(config_path), role=role) == expected
 
 
-def test_environment_plate_shutdown(monkeypatch, tmp_path):
-    monkeypatch.setattr(gfa_environment, "GFAController", FakeController)
-    monkeypatch.setattr(gfa_environment, "GFAAstrometry", FakeAstrometry)
-    monkeypatch.setattr(gfa_environment, "logger", FakeLogger())
+def test_environment_plate_initializes_all_components(tmp_path, env_module):
+    config_path = tmp_path / "cams.json"
+    astrometry_path = tmp_path / "astrometry.json"
+    save_root = tmp_path / "data"
+    _write_env_cams_json(config_path)
+    astrometry_path.write_text("{}", encoding="utf-8")
 
-    cfgp = tmp_path / "cams.json"
-    _write_env_cams_json(cfgp)
-    astp = tmp_path / "ast.json"
-    astp.write_text("{}", encoding="utf-8")
-
-    env = gfa_environment.GFAEnvironment(
-        gfa_config_path=str(cfgp),
-        ast_config_path=str(astp),
+    environment = env_module.GFAEnvironment(
+        gfa_config_path=str(config_path),
+        ast_config_path=str(astrometry_path),
         role="plate",
+        save_root=str(save_root),
     )
-    env.shutdown()
 
-    assert env.controller.close_camera_calls == [1, 2, 3, 4, 5, 6]
+    assert environment.save_root == save_root.resolve()
+    assert environment.camera_ids == [1, 2, 3, 4, 5, 6]
+    assert isinstance(environment.controller, FakeController)
+    assert isinstance(environment.astrometry, FakeAstrometry)
+    assert isinstance(environment.guider, FakeGuider)
+    assert environment.astrometry.save_root == save_root.resolve()
+    assert environment.guider.save_root == save_root.resolve()
 
 
-# -------------------------
-# GFAEnvironment (finder)
-# -------------------------
-def test_environment_finder(monkeypatch, tmp_path):
-    monkeypatch.setattr(gfa_environment, "GFAController", FakeController)
-    monkeypatch.setattr(gfa_environment, "logger", FakeLogger())
+def test_environment_finder_initializes_controller_only(tmp_path, env_module):
+    config_path = tmp_path / "cams.json"
+    _write_env_cams_json(config_path)
 
-    cfgp = tmp_path / "cams.json"
-    _write_env_cams_json(cfgp)
+    environment = env_module.GFAEnvironment(
+        gfa_config_path=str(config_path),
+        ast_config_path=None,
+        role="finder",
+        save_root=str(tmp_path / "finder_data"),
+    )
 
-    env = gfa_environment.GFAEnvironment(
-        gfa_config_path=str(cfgp),
+    assert environment.camera_ids == [7]
+    assert isinstance(environment.controller, FakeController)
+    assert environment.astrometry is None
+    assert environment.guider is None
+
+
+def test_environment_uses_default_save_root(tmp_path, monkeypatch, env_module):
+    config_path = tmp_path / "cams.json"
+    default_root = tmp_path / "default_data"
+    _write_env_cams_json(config_path)
+    monkeypatch.setattr(env_module, "DEFAULT_SAVE_ROOT", default_root)
+
+    environment = env_module.GFAEnvironment(
+        gfa_config_path=str(config_path),
         ast_config_path=None,
         role="finder",
     )
 
-    assert env.camera_ids == [7]
-    assert env.astrometry is None
-    assert env.guider is None
+    assert environment.save_root == default_root.resolve()
+    assert default_root.is_dir()
 
 
-def test_environment_finder_shutdown(monkeypatch, tmp_path):
-    monkeypatch.setattr(gfa_environment, "GFAController", FakeController)
-    monkeypatch.setattr(gfa_environment, "logger", FakeLogger())
-
-    cfgp = tmp_path / "cams.json"
-    _write_env_cams_json(cfgp)
-
-    env = gfa_environment.GFAEnvironment(
-        gfa_config_path=str(cfgp),
-        ast_config_path=None,
-        role="finder",
+@pytest.mark.parametrize(
+    ("role", "expected_closed"),
+    [
+        ("plate", [1, 2, 3, 4, 5, 6]),
+        ("finder", [7]),
+    ],
+)
+def test_environment_shutdown_closes_expected_cameras(
+    tmp_path, env_module, role, expected_closed
+):
+    config_path = tmp_path / "cams.json"
+    _write_env_cams_json(config_path)
+    environment = env_module.GFAEnvironment(
+        gfa_config_path=str(config_path),
+        ast_config_path=str(tmp_path / "astrometry.json") if role == "plate" else None,
+        role=role,
+        save_root=str(tmp_path / f"{role}_data"),
     )
-    env.shutdown()
 
-    assert env.controller.close_camera_calls == [7]
+    environment.shutdown()
+
+    assert environment.controller.close_camera_calls == expected_closed
+
+
+@pytest.mark.parametrize(
+    ("role", "expected_config_calls", "expected_astrometry_path"),
+    [
+        (
+            "plate",
+            ["etc/cams.json", "etc/astrometry_params.json"],
+            "/resolved/astrometry_params.json",
+        ),
+        ("finder", ["etc/cams.json"], None),
+    ],
+)
+def test_create_environment_resolves_paths_and_forwards_arguments(
+    tmp_path,
+    monkeypatch,
+    env_module,
+    role,
+    expected_config_calls,
+    expected_astrometry_path,
+):
+    config_calls = []
+    constructor_calls = []
+    sentinel = object()
+
+    def fake_get_config_path(relative_path):
+        config_calls.append(relative_path)
+        return f"/resolved/{Path(relative_path).name}"
+
+    def fake_environment(gfa_path, ast_path, *, role, save_root):
+        constructor_calls.append((gfa_path, ast_path, role, save_root))
+        return sentinel
+
+    monkeypatch.setattr(env_module, "get_config_path", fake_get_config_path)
+    monkeypatch.setattr(env_module, "GFAEnvironment", fake_environment)
+    save_root = str(tmp_path / "requested_root")
+
+    result = env_module.create_environment(role=role, save_root=save_root)
+
+    assert result is sentinel
+    assert config_calls == expected_config_calls
+    assert constructor_calls == [
+        (
+            "/resolved/cams.json",
+            expected_astrometry_path,
+            role,
+            save_root,
+        )
+    ]

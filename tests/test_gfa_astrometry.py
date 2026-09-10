@@ -1,5 +1,6 @@
 # tests/test_gfa_astrometry.py
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -892,3 +893,435 @@ def test_preproc_runs_only_missing_outputs(tmp_path, monkeypatch):
     assert called["paths"] == ["b.fits"]
     assert len(res) == 1
     assert len(corr_ok) == 1
+
+
+# -------------------------
+# Remaining helper and initialization branches
+# -------------------------
+def _new_astrometry(tmp_path, monkeypatch):
+    cfgp = tmp_path / "cfg.json"
+    _write_config(cfgp, tmp_path)
+    _patch_solve_field_ok(monkeypatch)
+    return GFAAstrometry(config=str(cfgp), logger=_get_default_logger())
+
+
+def _write_corr(path: Path, values=(1.0,)):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    column = fits.Column(
+        name="X",
+        format="E",
+        array=np.asarray(values, dtype=np.float32),
+    )
+    table_hdu = fits.BinTableHDU.from_columns([column])
+    fits.HDUList([fits.PrimaryHDU(), table_hdu]).writeto(path, overwrite=True)
+
+
+def test_get_solve_field_path_uses_process_environment(monkeypatch, tmp_path):
+    solve_field = tmp_path / "solve-field"
+    solve_field.write_text("executable", encoding="utf-8")
+    monkeypatch.setenv("ASTROMETRY_SOLVE_FIELD", str(solve_field))
+    monkeypatch.setattr(
+        gfa_astrometry.Path,
+        "exists",
+        lambda self: self == solve_field,
+        raising=True,
+    )
+    monkeypatch.setattr(gfa_astrometry.os, "access", lambda *args: True)
+
+    assert _get_solve_field_path(env={}) == str(solve_field)
+
+
+def test_get_default_config_path_success(monkeypatch):
+    monkeypatch.setattr(gfa_astrometry.os.path, "isfile", lambda path: True)
+
+    result = _get_default_config_path()
+
+    assert result.endswith(os.path.join("etc", "astrometry_params.json"))
+
+
+def test_init_uses_default_config_and_logger(tmp_path, monkeypatch):
+    cfgp = tmp_path / "cfg.json"
+    _write_config(cfgp, tmp_path)
+    expected_logger = logging.getLogger("test_default_astrometry_logger")
+
+    monkeypatch.setattr(gfa_astrometry, "_get_default_config_path", lambda: str(cfgp))
+    monkeypatch.setattr(gfa_astrometry, "_get_default_logger", lambda: expected_logger)
+    _patch_solve_field_ok(monkeypatch)
+
+    ast = GFAAstrometry()
+
+    assert ast.logger is expected_logger
+    assert Path(ast.dir_path).is_dir()
+
+
+def test_header_and_reference_radec_edge_cases(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+
+    missing_dec = Path(ast.dir_path) / "missing_dec.fits"
+    header = fits.Header()
+    header["RA"] = 10.0
+    fits.writeto(missing_dec, np.zeros((2, 2)), header=header, overwrite=True)
+
+    with pytest.raises(KeyError, match="RA/DEC header missing"):
+        ast._read_radec_from_header(str(missing_dec))
+    missing_dec.unlink()
+
+    valid = Path(ast.dir_path) / "valid.fits"
+    _write_raw_fits(valid, np.zeros((2, 2)), ra=12.0, dec=-3.0)
+    assert ast._get_reference_radec_from_inputs() == ("12.0", "-3.0")
+    assert ast._get_reference_radec_from_inputs(input_files=[]) is None
+    assert ast._get_reference_radec_from_astro_outputs([]) is None
+
+    no_radec = Path(ast.final_astrometry_dir) / "astro_no_radec.fits"
+    fits.writeto(no_radec, np.zeros((2, 2)), overwrite=True)
+    assert ast._get_reference_radec_from_astro_outputs([str(no_radec)]) is None
+    assert ast._get_reference_radec_from_astro_outputs(
+        [str(tmp_path / "missing_astro.fits")]
+    ) is None
+
+
+def test_parse_radec_hourangle_path_without_platform_parser(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+
+    class Angle:
+        def __init__(self, degrees):
+            self.deg = degrees
+
+    class Coordinate:
+        ra = Angle(15.0)
+        dec = Angle(-2.0)
+
+    monkeypatch.setattr(gfa_astrometry, "SkyCoord", lambda *args, **kwargs: Coordinate())
+
+    assert ast._parse_radec_to_deg("01:00:00", "-02:00:00") == (15.0, -2.0)
+
+
+def test_parse_radec_falls_back_from_hourangle_to_degrees(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    calls = []
+
+    class Angle:
+        def __init__(self, degrees):
+            self.deg = degrees
+
+    class Coordinate:
+        ra = Angle(180.0)
+        dec = Angle(5.0)
+
+    def fake_skycoord(*args, **kwargs):
+        calls.append(kwargs["unit"])
+        if len(calls) == 1:
+            raise ValueError("not hourangle input")
+        return Coordinate()
+
+    monkeypatch.setattr(gfa_astrometry, "SkyCoord", fake_skycoord)
+
+    assert ast._parse_radec_to_deg("180 deg", "5 deg") == (180.0, 5.0)
+    assert len(calls) == 2
+
+
+def test_delete_astro_outputs_ignores_remove_error(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    target = str(Path(ast.final_astrometry_dir) / "astro_locked.fits")
+    monkeypatch.setattr(gfa_astrometry.glob, "glob", lambda pattern: [target])
+    monkeypatch.setattr(
+        gfa_astrometry.os,
+        "remove",
+        lambda path: (_ for _ in ()).throw(PermissionError("locked")),
+    )
+
+    assert ast._delete_astro_outputs() == 0
+
+
+# -------------------------
+# Remaining combined-star catalog branches
+# -------------------------
+def test_build_combined_star_handles_missing_cleanup_and_low_row_count(
+    tmp_path, monkeypatch
+):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    valid = Path(ast.temp_dir) / "valid.corr"
+    missing = Path(ast.temp_dir) / "missing.corr"
+    _write_corr(valid, values=(1.0,))
+
+    output = ast.build_combined_star_from_corr(
+        corr_files=[str(valid), str(missing)],
+        min_rows=5,
+        cleanup=True,
+    )
+
+    assert Path(output).exists()
+    assert not valid.exists()
+
+
+def test_build_combined_star_rejects_corr_without_table(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    corr = Path(ast.temp_dir) / "primary_only.corr"
+    fits.writeto(corr, np.zeros((2, 2)), overwrite=True)
+
+    with pytest.raises(RuntimeError, match="All .corr files failed"):
+        ast.build_combined_star_from_corr(corr_files=[str(corr)])
+
+
+# -------------------------
+# Remaining astrometry_raw branches
+# -------------------------
+def test_astrometry_raw_handles_unlistable_failed_workdir(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    raw = Path(ast.dir_path) / "failed.fits"
+    _write_raw_fits(raw, np.zeros((2, 2)), ra=10.0, dec=20.0)
+
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = "solve failed"
+
+    monkeypatch.setattr(gfa_astrometry.subprocess, "run", lambda *a, **k: Result())
+    monkeypatch.setattr(
+        gfa_astrometry.os,
+        "listdir",
+        lambda path: (_ for _ in ()).throw(OSError("cannot list")),
+    )
+
+    with pytest.raises(RuntimeError, match="new file not created"):
+        ast.astrometry_raw(str(raw))
+
+
+def test_astrometry_raw_nonzero_result_continues_and_logs_optional_failures(
+    tmp_path, monkeypatch
+):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    raw = Path(ast.dir_path) / "partial.fits"
+    _write_raw_fits(raw, np.zeros((2, 2)), ra=30.0, dec=-10.0)
+
+    existing_output = Path(ast.final_astrometry_dir) / "astro_partial.fits"
+    fits.writeto(existing_output, np.ones((1, 1)), overwrite=True)
+
+    def fake_run(cmd, capture_output, text, env):
+        work_dir = Path(cmd[cmd.index("-D") + 1])
+        outbase = cmd[cmd.index("-o") + 1]
+        header = fits.Header()
+        header["CRVAL1"] = 31.5
+        header["CRVAL2"] = -9.5
+        fits.writeto(
+            work_dir / f"{outbase}.new",
+            np.zeros((2, 2)),
+            header=header,
+            overwrite=True,
+        )
+
+        class Result:
+            returncode = 2
+            stdout = "partial stdout"
+            stderr = "partial stderr"
+
+        return Result()
+
+    real_open = fits.open
+
+    def selective_open(path, mode="readonly", *args, **kwargs):
+        if mode == "update":
+            raise OSError("header is read-only")
+        return real_open(path, mode=mode, *args, **kwargs)
+
+    monkeypatch.setattr(gfa_astrometry.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        gfa_astrometry.os,
+        "listdir",
+        lambda path: (_ for _ in ()).throw(OSError("cannot list")),
+    )
+    monkeypatch.setattr(gfa_astrometry.fits, "open", selective_open)
+
+    crval1, crval2, output, corr = ast.astrometry_raw(str(raw))
+
+    assert (crval1, crval2) == (31.5, -9.5)
+    assert Path(output).exists()
+    assert not Path(corr).exists()
+
+
+def test_rm_tempfiles_recreates_empty_directory(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    temp_dir = Path(ast.temp_dir)
+    (temp_dir / "temporary.txt").write_text("temporary", encoding="utf-8")
+
+    ast.rm_tempfiles()
+
+    assert temp_dir.is_dir()
+    assert list(temp_dir.iterdir()) == []
+
+
+# -------------------------
+# Remaining ensure_astrometry_ready branches
+# -------------------------
+def _write_astro_output(path: Path, ra=None, dec=None):
+    header = fits.Header()
+    if ra is not None:
+        header["RA"] = ra
+    if dec is not None:
+        header["DEC"] = dec
+    fits.writeto(path, np.zeros((2, 2)), header=header, overwrite=True)
+
+
+def test_ensure_reuse_session_ok_catches_forced_catalog_failure(
+    tmp_path, monkeypatch
+):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    astro = Path(ast.final_astrometry_dir) / "astro_existing.fits"
+    raw = Path(ast.dir_path) / "raw.fits"
+    _write_astro_output(astro, ra=10.0, dec=20.0)
+    _write_raw_fits(raw, np.zeros((2, 2)), ra=10.0, dec=20.0)
+
+    monkeypatch.setattr(
+        ast,
+        "build_combined_star_from_corr",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no corr")),
+    )
+    monkeypatch.setattr(
+        ast,
+        "preproc",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must reuse")),
+    )
+
+    outputs = ast.ensure_astrometry_ready(
+        input_files=[raw],
+        star_catalog_force=True,
+    )
+
+    assert outputs == [str(astro)]
+
+
+def test_ensure_reuse_without_radec_catches_catalog_failure(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    astro = Path(ast.final_astrometry_dir) / "astro_without_radec.fits"
+    _write_astro_output(astro)
+
+    monkeypatch.setattr(
+        ast,
+        "build_combined_star_from_corr",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no corr")),
+    )
+    monkeypatch.setattr(
+        ast,
+        "preproc",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must reuse")),
+    )
+
+    outputs = ast.ensure_astrometry_ready(
+        input_files=[],
+        star_catalog_force=True,
+    )
+
+    assert outputs == [str(astro)]
+
+
+def test_ensure_raises_when_preproc_produces_no_outputs(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    monkeypatch.setattr(ast, "preproc", lambda *a, **k: ([], []))
+
+    with pytest.raises(RuntimeError, match="expected outputs not found"):
+        ast.ensure_astrometry_ready(force=True)
+
+
+def test_ensure_builds_catalog_from_current_corr_files(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    corr = Path(ast.temp_dir) / "current.corr"
+    corr.write_text("placeholder", encoding="utf-8")
+    output = Path(ast.final_astrometry_dir) / "astro_new.fits"
+    built_with = []
+
+    def fake_preproc(*args, **kwargs):
+        _write_astro_output(output)
+        return [], [str(corr)]
+
+    monkeypatch.setattr(ast, "preproc", fake_preproc)
+    monkeypatch.setattr(
+        ast,
+        "build_combined_star_from_corr",
+        lambda corr_files=None: built_with.append(corr_files),
+    )
+
+    outputs = ast.ensure_astrometry_ready(force=True, build_star_catalog=True)
+
+    assert outputs == [str(output)]
+    assert built_with == [[str(corr)]]
+
+
+def test_ensure_empty_corr_fallback_catalog_failure_is_nonfatal(
+    tmp_path, monkeypatch
+):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    output = Path(ast.final_astrometry_dir) / "astro_new.fits"
+
+    def fake_preproc(*args, **kwargs):
+        _write_astro_output(output)
+        return [], []
+
+    monkeypatch.setattr(ast, "preproc", fake_preproc)
+    monkeypatch.setattr(
+        ast,
+        "build_combined_star_from_corr",
+        lambda corr_files=None: (_ for _ in ()).throw(RuntimeError("no catalog")),
+    )
+
+    outputs = ast.ensure_astrometry_ready(
+        force=True,
+        build_star_catalog=True,
+        fallback_glob_on_empty_corr_ok=True,
+    )
+
+    assert outputs == [str(output)]
+
+
+# -------------------------
+# Remaining preproc branches
+# -------------------------
+def test_preproc_empty_astro_directory_runs_full_processing(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    raw = Path(ast.dir_path) / "full.fits"
+    fits.writeto(raw, np.zeros((2, 2)), overwrite=True)
+
+    monkeypatch.setattr(
+        ast,
+        "astrometry_raw",
+        lambda path: (1.0, 2.0, "astro_full.fits", "missing.corr"),
+    )
+
+    results, corr_ok = ast.preproc(
+        input_files=[raw],
+        force=False,
+        run_missing_only=True,
+    )
+
+    assert len(results) == 1
+    assert corr_ok == []
+
+
+def test_preproc_all_expected_outputs_exist_returns_empty(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    raw = Path(ast.dir_path) / "done.fits"
+    output = Path(ast.final_astrometry_dir) / "astro_done.fits"
+    fits.writeto(raw, np.zeros((2, 2)), overwrite=True)
+    fits.writeto(output, np.zeros((2, 2)), overwrite=True)
+    monkeypatch.setattr(
+        ast,
+        "astrometry_raw",
+        lambda path: (_ for _ in ()).throw(AssertionError("nothing should run")),
+    )
+
+    assert ast.preproc(input_files=[raw], run_missing_only=True) == ([], [])
+
+
+def test_preproc_collects_worker_failure_and_returns(tmp_path, monkeypatch):
+    ast = _new_astrometry(tmp_path, monkeypatch)
+    raw = Path(ast.dir_path) / "broken.fits"
+    fits.writeto(raw, np.zeros((2, 2)), overwrite=True)
+    monkeypatch.setattr(
+        ast,
+        "astrometry_raw",
+        lambda path: (_ for _ in ()).throw(RuntimeError("worker failed")),
+    )
+
+    results, corr_ok = ast.preproc(input_files=[raw], force=True)
+
+    assert results == []
+    assert corr_ok == []

@@ -473,7 +473,12 @@ async def test_configure_and_grab_ftd_override_used(controller):
 @pytest.mark.asyncio
 async def test_grabone_camera_not_opened_returns_timeout_list(controller):
     controller.open_cameras.clear()
-    assert await controller.grabone(CamNum=1, ExpTime=1.0, Binning=1) == [1]
+    assert await controller.grabone(CamNum=1, ExpTime=1.0, Binning=1) == {
+        "cam_num": 1,
+        "serial": None,
+        "image": None,
+        "timeout": True,
+    }
 
 
 @pytest.mark.asyncio
@@ -484,7 +489,12 @@ async def test_grabone_uses_config_params_and_success_returns_empty(controller):
     out = await controller.grabone(
         CamNum=1, ExpTime=1.0, Binning=1, packet_size=None, ipd=None
     )
-    assert out == []
+    assert out == {
+        "cam_num": 1,
+        "serial": "SERIAL123",
+        "image": [[1, 2], [3, 4]],
+        "timeout": False,
+    }
 
 
 @pytest.mark.asyncio
@@ -498,7 +508,12 @@ async def test_grabone_configure_returns_none_marks_timeout(controller, monkeypa
     monkeypatch.setattr(controller, "configure_and_grab", fake_configure_and_grab)
 
     out = await controller.grabone(CamNum=1, ExpTime=1.0, Binning=1)
-    assert out == [1]
+    assert out == {
+        "cam_num": 1,
+        "serial": "SERIAL123",
+        "image": None,
+        "timeout": True,
+    }
 
 
 @pytest.mark.asyncio
@@ -514,7 +529,12 @@ async def test_grabone_configure_raises_exception_marks_timeout(
     monkeypatch.setattr(controller, "configure_and_grab", boom)
 
     out = await controller.grabone(CamNum=1, ExpTime=1.0, Binning=1)
-    assert out == [1]
+    assert out == {
+        "cam_num": 1,
+        "serial": "SERIAL123",
+        "image": None,
+        "timeout": True,
+    }
 
 
 @pytest.mark.asyncio
@@ -576,3 +596,91 @@ def test_open_camera_open_failure_raises(controller, monkeypatch):
 
     with pytest.raises(Exception):
         controller.open_camera(2)
+
+
+# -------------------------
+# Remaining release branches
+# -------------------------
+def test_default_config_path_success(monkeypatch, gc_module):
+    """The helper returns its package-local etc/cams.json path when present."""
+    monkeypatch.setattr(gc_module.os.path, "isfile", lambda path: True)
+
+    result = gc_module._get_default_config_path()
+
+    assert Path(result).name == "cams.json"
+    assert Path(result).parent.name == "etc"
+
+
+def test_init_uses_default_config_and_logger(tmp_path, monkeypatch, gc_module):
+    """Both optional constructor arguments exercise their documented defaults."""
+    cfgp = tmp_path / "cams.json"
+    _write_cams_json(cfgp)
+    default_logger = FakeLogger()
+
+    monkeypatch.setattr(gc_module, "_get_default_config_path", lambda: str(cfgp))
+    monkeypatch.setattr(gc_module, "_get_default_logger", lambda: default_logger)
+
+    instance = gc_module.GFAController()
+
+    assert instance.logger is default_logger
+    assert instance.NUM_CAMERAS == 2
+
+
+@pytest.mark.asyncio
+async def test_close_all_cameras_logs_close_failure_and_still_clears(controller):
+    class CloseFailureCamera:
+        def IsOpen(self):
+            return True
+
+        def Close(self):
+            raise RuntimeError("close failed")
+
+    controller.open_cameras = {"Cam1": CloseFailureCamera()}
+
+    await controller.close_all_cameras()
+
+    assert controller.open_cameras == {}
+    assert any(
+        level == "exception" and "Failed to close Cam1" in message
+        for level, message in controller.logger.msg
+    )
+
+
+@pytest.mark.asyncio
+async def test_grabone_catches_genicam_timeout(controller, monkeypatch):
+    cam = FakeInstantCamera(object(), open_state=True)
+    controller.open_cameras["Cam1"] = cam
+
+    async def raise_timeout(*args, **kwargs):
+        raise FakeTimeoutException("timeout")
+
+    monkeypatch.setattr(controller, "configure_and_grab", raise_timeout)
+
+    result = await controller.grabone(
+        CamNum=1,
+        ExpTime=1.0,
+        Binning=1,
+        packet_size=1500,
+        ipd=10,
+    )
+
+    assert result == {
+        "cam_num": 1,
+        "serial": "SERIAL123",
+        "image": None,
+        "timeout": True,
+    }
+    assert any(
+        level == "error" and "TimeoutException during grabbing camera 1" in message
+        for level, message in controller.logger.msg
+    )
+
+
+def test_open_camera_success(controller):
+    controller.open_camera(1)
+
+    assert controller.open_cameras["Cam1"].IsOpen() is True
+    assert any(
+        level == "info" and "Cam1 opened" in message
+        for level, message in controller.logger.msg
+    )
